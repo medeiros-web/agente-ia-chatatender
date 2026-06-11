@@ -476,20 +476,39 @@ def api_evo_create_instance():
     url      = models.get_setting("evo_url",      config.EVOLUTION_URL)
     key      = models.get_setting("evo_key",      config.EVOLUTION_KEY)
     instance = models.get_setting("evo_instance", config.INSTANCE_NAME)
-    payload  = json.dumps({"instanceName": instance, "qrcode": True, "integration": "WHATSAPP-BAILEYS"}).encode()
-    try:
-        req = urllib.request.Request(
-            f"{url}/instance/create",
-            data=payload,
+
+    def _req(path, method="GET", data=None):
+        r = urllib.request.Request(
+            f"{url}{path}",
+            data=data,
             headers={"apikey": key, "Content-Type": "application/json"},
-            method="POST",
+            method=method,
         )
-        with urllib.request.urlopen(req, timeout=10) as r:
-            return jsonify({"ok": True, "data": json.loads(r.read())})
+        with urllib.request.urlopen(r, timeout=10) as resp:
+            return json.loads(resp.read())
+
+    try:
+        # Verifica se instância já existe
+        try:
+            state = _req(f"/instance/connectionState/{instance}")
+            return jsonify({"ok": True, "exists": True, "state": state})
+        except urllib.error.HTTPError as e:
+            if e.code != 404:
+                raise
+
+        # Não existe — cria
+        payload = json.dumps({
+            "instanceName": instance,
+            "qrcode": True,
+            "integration": "WHATSAPP-BAILEYS",
+        }).encode()
+        data = _req("/instance/create", method="POST", data=payload)
+        return jsonify({"ok": True, "exists": False, "data": data})
+
     except urllib.error.HTTPError as e:
-        return jsonify({"ok": False, "error": e.read().decode()[:200]}), 400
+        return jsonify({"ok": False, "error": e.read().decode()[:300]}), 400
     except Exception as e:
-        return jsonify({"ok": False, "error": str(e)[:120]}), 500
+        return jsonify({"ok": False, "error": str(e)[:200]}), 500
 
 
 # ── Stats / Dashboard ─────────────────────────────────────────────────────────
