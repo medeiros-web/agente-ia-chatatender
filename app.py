@@ -3,6 +3,9 @@
 ChatAtender — Servidor principal Flask + Socket.IO.
 Multi-atendimento WhatsApp com Kanban, IA, QR Code e dashboard em tempo real.
 """
+import eventlet
+eventlet.monkey_patch()
+
 import sys
 import json
 import base64
@@ -54,7 +57,7 @@ app.config["SESSION_COOKIE_HTTPONLY"] = True
 socketio = SocketIO(
     app,
     cors_allowed_origins="*",
-    async_mode="threading",
+    async_mode="eventlet",
     logger=False,
     engineio_logger=False,
 )
@@ -612,5 +615,4 @@ if __name__ == "__main__":
         port=config.WEBHOOK_PORT,
         debug=False,
         use_reloader=False,
-        allow_unsafe_werkzeug=True,
     )
