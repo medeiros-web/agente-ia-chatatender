@@ -91,7 +91,7 @@ _qr_thread_started = False
 
 
 def _qr_poller():
-    """Verifica status e QR code da Evolution API em loop."""
+    """Verifica status e QR code da Evolution GO em loop."""
     last_qr = ""
     while True:
         try:
@@ -99,29 +99,19 @@ def _qr_poller():
             state = (status.get("instance") or {}).get("state", "unknown")
             socketio.emit("connection_status", {"state": state}, namespace="/")
 
-            if state in ("connecting", "close", "qr"):
-                # Busca QR code
-                url = f"{config.EVOLUTION_URL}/instance/connect/{config.INSTANCE_NAME}"
-                req = urllib.request.Request(
-                    url, headers={"apikey": config.EVOLUTION_KEY}
-                )
-                try:
-                    with urllib.request.urlopen(req, timeout=10) as r:
-                        data = json.loads(r.read())
-                        qr_b64 = data.get("base64", "")
-                        if qr_b64 and qr_b64 != last_qr:
-                            last_qr = qr_b64
-                            socketio.emit("qrcode", {"qrcode": qr_b64}, namespace="/")
-                            # Salva no disco
-                            try:
-                                img = base64.b64decode(qr_b64.split(",")[-1])
-                                (Path(__file__).parent / "qrcode.png").write_bytes(img)
-                            except Exception:
-                                pass
-                except Exception:
-                    pass
+            if state in ("connecting", "close", "qr", "unknown"):
+                qr_b64 = evo.get_qr_code()
+                if qr_b64 and qr_b64 != last_qr:
+                    last_qr = qr_b64
+                    socketio.emit("qrcode", {"qrcode": qr_b64}, namespace="/")
+                    try:
+                        img_data = qr_b64.split(",")[-1]
+                        img = base64.b64decode(img_data)
+                        (Path(__file__).parent / "qrcode.png").write_bytes(img)
+                    except Exception:
+                        pass
             elif state == "open":
-                last_qr = ""  # reseta para próxima desconexão
+                last_qr = ""
         except Exception as e:
             log.debug("QR poller error: %s", e)
         time.sleep(8)
@@ -153,53 +143,100 @@ def webhook():
 
 def _process_webhook(data: dict) -> None:
     event = data.get("event", "")
-    if event not in ("messages.upsert", "MESSAGES_UPSERT"):
+
+    # ── Evolution GO format ────────────────────────────────────────────────────
+    if event == "Message":
+        msg_data = data.get("data", {})
+        info = msg_data.get("Info", {})
+
+        if info.get("IsFromMe"):
+            return
+        remote_jid = info.get("Chat", "")
+        is_group = info.get("IsGroup", False) or "@g.us" in remote_jid
+        if "@broadcast" in remote_jid:
+            return
+        if is_group and models.get_setting("reply_groups", "0") != "1":
+            return
+
+        msg_id = info.get("ID", "")
+        if _is_duplicate(msg_id):
+            return
+
+        phone = remote_jid.replace("@s.whatsapp.net", "").replace("@c.us", "").split(":")[0]
+        if not phone:
+            return
+
+        sender_name = info.get("PushName") or phone
+        message_obj = msg_data.get("Message", {})
+        msg_type = info.get("Type", "text").lower()
+
+        text = (
+            message_obj.get("conversation")
+            or message_obj.get("extendedTextMessage", {}).get("text")
+            or message_obj.get("imageMessage", {}).get("caption")
+            or message_obj.get("videoMessage", {}).get("caption")
+            or ""
+        ).strip()
+
+        # Áudio
+        audio_bytes: bytes | None = None
+        audio_mime = "audio/ogg"
+        is_audio = msg_type in ("audio", "ptt", "voice")
+        if is_audio and not text:
+            if config.AUDIO_TRANSCRIPTION and msg_id:
+                audio_bytes = evo.download_media(msg_id)
+                if not audio_bytes:
+                    text = "[Mensagem de voz]"
+            else:
+                text = "[Mensagem de voz — envie texto por favor]"
+
+    # ── Classic Evolution API format ──────────────────────────────────────────
+    elif event in ("messages.upsert", "MESSAGES_UPSERT"):
+        msg_data = data.get("data", {})
+        key = msg_data.get("key", {})
+
+        if key.get("fromMe"):
+            return
+        remote_jid = key.get("remoteJid", "")
+        is_group = "@g.us" in remote_jid
+        if "@broadcast" in remote_jid:
+            return
+        if is_group and models.get_setting("reply_groups", "0") != "1":
+            return
+
+        msg_id = key.get("id", "")
+        if _is_duplicate(msg_id):
+            return
+
+        phone = remote_jid.replace("@s.whatsapp.net", "").replace("@c.us", "")
+        if not phone:
+            return
+
+        sender_name = msg_data.get("pushName") or phone
+        message_obj = msg_data.get("message", {})
+
+        text = (
+            message_obj.get("conversation")
+            or message_obj.get("extendedTextMessage", {}).get("text")
+            or message_obj.get("imageMessage", {}).get("caption")
+            or message_obj.get("videoMessage", {}).get("caption")
+            or ""
+        ).strip()
+
+        audio_bytes: bytes | None = None
+        audio_mime = "audio/ogg"
+        is_audio = "audioMessage" in message_obj or "pttMessage" in message_obj
+        if is_audio and not text:
+            audio_info = message_obj.get("audioMessage") or message_obj.get("pttMessage") or {}
+            audio_mime = audio_info.get("mimetype", "audio/ogg")
+            if config.AUDIO_TRANSCRIPTION and msg_id:
+                audio_bytes = evo.download_media(msg_id)
+                if not audio_bytes:
+                    text = "[Mensagem de voz]"
+            else:
+                text = "[Mensagem de voz — envie texto por favor]"
+    else:
         return
-
-    msg_data = data.get("data", {})
-    key = msg_data.get("key", {})
-
-    if key.get("fromMe"):
-        return
-    remote_jid = key.get("remoteJid", "")
-    is_group = "@g.us" in remote_jid
-    if "@broadcast" in remote_jid:
-        return
-    if is_group and models.get_setting("reply_groups", "0") != "1":
-        return
-
-    msg_id = key.get("id", "")
-    if _is_duplicate(msg_id):
-        return
-
-    phone = remote_jid.replace("@s.whatsapp.net", "").replace("@c.us", "")
-    if not phone:
-        return
-
-    sender_name = msg_data.get("pushName") or phone
-    message_obj = msg_data.get("message", {})
-
-    text = (
-        message_obj.get("conversation")
-        or message_obj.get("extendedTextMessage", {}).get("text")
-        or message_obj.get("imageMessage", {}).get("caption")
-        or message_obj.get("videoMessage", {}).get("caption")
-        or ""
-    ).strip()
-
-    # Áudio
-    audio_bytes: bytes | None = None
-    audio_mime = "audio/ogg"
-    is_audio = "audioMessage" in message_obj or "pttMessage" in message_obj
-    if is_audio and not text:
-        audio_info = message_obj.get("audioMessage") or message_obj.get("pttMessage") or {}
-        audio_mime = audio_info.get("mimetype", "audio/ogg")
-        if config.AUDIO_TRANSCRIPTION and msg_id:
-            audio_bytes = evo.download_media(msg_id)
-            if not audio_bytes:
-                text = "[Mensagem de voz]"
-        else:
-            text = "[Mensagem de voz — envie texto por favor]"
 
     if not text and not audio_bytes:
         return
@@ -375,16 +412,10 @@ def api_users():
 @app.route("/api/qrcode")
 @login_required
 def api_qrcode():
-    """Busca QR code atual da Evolution API."""
+    """Busca QR code atual da Evolution GO."""
     try:
-        url = f"{config.EVOLUTION_URL}/instance/connect/{config.INSTANCE_NAME}"
-        req = urllib.request.Request(url, headers={"apikey": config.EVOLUTION_KEY})
-        with urllib.request.urlopen(req, timeout=10) as r:
-            data = json.loads(r.read())
-            return jsonify({
-                "qrcode": data.get("base64", ""),
-                "code":   data.get("code", ""),
-            })
+        qr_b64 = evo.get_qr_code()
+        return jsonify({"qrcode": qr_b64, "code": qr_b64})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -493,42 +524,13 @@ def api_evo_test():
 @app.route("/api/settings/evolution/create-instance", methods=["POST"])
 @login_required
 def api_evo_create_instance():
-    url      = models.get_setting("evo_url",      config.EVOLUTION_URL)
-    key      = models.get_setting("evo_key",      config.EVOLUTION_KEY)
-    instance = models.get_setting("evo_instance", config.INSTANCE_NAME)
-
-    def _req(path, method="GET", data=None):
-        r = urllib.request.Request(
-            f"{url}{path}",
-            data=data,
-            headers={"apikey": key, "Content-Type": "application/json"},
-            method=method,
-        )
-        with urllib.request.urlopen(r, timeout=10) as resp:
-            return json.loads(resp.read())
-
-    try:
-        # Verifica se instância já existe
-        try:
-            state = _req(f"/instance/connectionState/{instance}")
-            return jsonify({"ok": True, "exists": True, "state": state})
-        except urllib.error.HTTPError as e:
-            if e.code != 404:
-                raise
-
-        # Não existe — cria
-        payload = json.dumps({
-            "instanceName": instance,
-            "qrcode": True,
-            "integration": "WHATSAPP-BAILEYS",
-        }).encode()
-        data = _req("/instance/create", method="POST", data=payload)
-        return jsonify({"ok": True, "exists": False, "data": data})
-
-    except urllib.error.HTTPError as e:
-        return jsonify({"ok": False, "error": e.read().decode()[:300]}), 400
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)[:200]}), 500
+    result = evo.create_instance()
+    if not result.get("ok"):
+        return jsonify(result), 400
+    # Registra webhook se URL configurada
+    if config.WEBHOOK_PUBLIC_URL:
+        evo.register_webhook(config.WEBHOOK_PUBLIC_URL)
+    return jsonify(result)
 
 
 # ── Stats / Dashboard ─────────────────────────────────────────────────────────
