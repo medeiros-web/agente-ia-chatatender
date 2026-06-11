@@ -4,15 +4,30 @@
   "description": "Plataforma de atendimento via WhatsApp com IA",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#00a884",
+  "background_color": "#1f2937",
   "theme_color": "#00a884",
-  "orientation": "portrait-primary",
+  "orientation": "any",
   "icons": [
     {
-      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'><rect width='192' height='192' rx='40' fill='%2300a884'/><text x='96' y='130' font-size='100' text-anchor='middle'>💬</text></svg>",
+      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'%3E%3Crect width='192' height='192' rx='40' fill='%2300a884'/%3E%3Ccircle cx='96' cy='88' r='44' fill='%23fff'/%3E%3Cpath d='M96 44c-26.5 0-48 19.2-48 42.9 0 9.4 3.3 18.1 8.8 25.1L52 134l22.8-5.8C80.5 130.6 88 132 96 132c26.5 0 48-19.2 48-42.9S122.5 44 96 44z' fill='%2300a884'/%3E%3Ccircle cx='78' cy='89' r='5' fill='%23fff'/%3E%3Ccircle cx='96' cy='89' r='5' fill='%23fff'/%3E%3Ccircle cx='114' cy='89' r='5' fill='%23fff'/%3E%3C/svg%3E",
       "sizes": "192x192",
       "type": "image/svg+xml",
-      "purpose": "any maskable"
+      "purpose": "any"
+    },
+    {
+      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='96' fill='%2300a884'/%3E%3Cpath d='M256 108c-73.1 0-132 52.2-132 116.6 0 25.7 9.1 49.4 24.4 68.4l-16.5 60.5 62.6-15.9C213.7 344 234.3 349 256 349c73.1 0 132-52.2 132-116.4S329.1 108 256 108z' fill='%23fff'/%3E%3Ccircle cx='210' cy='236' r='14' fill='%2300a884'/%3E%3Ccircle cx='256' cy='236' r='14' fill='%2300a884'/%3E%3Ccircle cx='302' cy='236' r='14' fill='%2300a884'/%3E%3C/svg%3E",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
+      "sizes": "1x1",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "ChatAtender - Atendimento WhatsApp"
     }
   ],
   "categories": ["business", "productivity"],

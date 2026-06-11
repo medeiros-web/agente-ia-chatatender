@@ -218,6 +218,55 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
 @keyframes fadeIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
 .spinner{width:32px;height:32px;border:3px solid var(--border);border-top-color:var(--green);border-radius:50%;animation:spin .8s linear infinite;margin:auto}
 @keyframes spin{to{transform:rotate(360deg)}}
+
+/* ── BOTTOM NAV (mobile) ── */
+#bottom-nav{display:none;position:fixed;bottom:0;left:0;right:0;height:56px;background:var(--sidebar);z-index:200;flex-direction:row;align-items:center;justify-content:space-around;padding:0 4px;border-top:1px solid #374151}
+.bn-btn{flex:1;height:56px;border:none;background:transparent;color:#9ca3af;font-size:1.1rem;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;position:relative;transition:.15s}
+.bn-btn.active{color:var(--green)}
+.bn-btn span{font-size:.55rem;font-weight:600;text-transform:uppercase;letter-spacing:.03em}
+.bn-btn .bn-badge{position:absolute;top:6px;right:calc(50% - 18px);background:var(--red);color:#fff;font-size:.55rem;padding:1px 3px;border-radius:99px;min-width:14px;text-align:center}
+#chat-back-btn{display:none;width:36px;height:36px;border:none;background:transparent;color:var(--text);font-size:1.2rem;cursor:pointer;border-radius:8px;align-items:center;justify-content:center;flex-shrink:0;margin-right:2px}
+
+/* ── RESPONSIVE ── */
+@media(max-width:767px){
+  #sidebar{display:none}
+  #bottom-nav{display:flex}
+  #app{padding-bottom:56px;padding-bottom:calc(56px + env(safe-area-inset-bottom,0px))}
+  #content{height:calc(100vh - 56px - env(safe-area-inset-bottom,0px));overflow:hidden}
+  #ticket-panel{width:100%!important;min-width:0}
+  #chat-back-btn{display:flex}
+  /* Stack nav: chat open → hide ticket list */
+  #app.mobile-chat #ticket-panel{display:none!important}
+  #app.mobile-chat #chat-area{flex:1;width:100%}
+  /* Human panel → bottom sheet */
+  #human-panel{position:fixed!important;bottom:calc(56px + env(safe-area-inset-bottom,0px));left:0;right:0;width:100%!important;max-height:78vh;border-radius:20px 20px 0 0;border-left:none;border-top:1px solid var(--border);box-shadow:0 -6px 24px rgba(0,0,0,.18);z-index:150;overflow-y:auto;transition:transform .3s,opacity .3s}
+  #human-panel.collapsed{transform:translateY(100%);width:100%!important;opacity:1!important;pointer-events:none}
+  #human-panel:not(.collapsed){transform:translateY(0)}
+  /* Settings: single column */
+  #settings-view [style*="grid-template-columns:1fr 1fr"]{display:block!important}
+  #settings-view [style*="grid-template-columns:1fr 1fr"] > div{margin-bottom:12px}
+  .settings-grid{grid-template-columns:1fr!important}
+  /* Chat header compact */
+  #chat-header{padding:8px 10px;gap:8px}
+  .chat-action-btn{padding:5px 8px}
+  .chat-action-btn i + *{display:none}
+  /* Toast above bottom nav */
+  .toast{bottom:calc(66px + env(safe-area-inset-bottom,0px));right:12px;left:12px;text-align:center}
+  /* Input safe area */
+  #chat-input-area{padding-bottom:calc(12px + env(safe-area-inset-bottom,0px))}
+  /* Kanban scroll */
+  #kanban-view{padding:12px;overflow-x:auto}
+  /* Dashboard padding */
+  #dashboard-view{padding:16px}
+  #contacts-view{padding:16px}
+  .contacts-header{flex-wrap:wrap;gap:10px}
+  .contacts-search{width:100%}
+}
+@media(min-width:768px) and (max-width:1023px){
+  #ticket-panel{width:280px}
+  #human-panel{width:240px}
+  #human-panel-inner{width:240px}
+}
 </style>
 </head>
 <body>
@@ -265,6 +314,26 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
     </div>
   </div>
 
+  <!-- BOTTOM NAV (mobile) -->
+  <nav id="bottom-nav">
+    <button class="bn-btn active" id="bn-tickets" onclick="showView('tickets')">
+      <i class="fa fa-comments"></i><span>Chats</span>
+      <span class="bn-badge hidden" id="bn-badge">0</span>
+    </button>
+    <button class="bn-btn" id="bn-kanban" onclick="showView('kanban')">
+      <i class="fa fa-columns"></i><span>Kanban</span>
+    </button>
+    <button class="bn-btn" id="bn-dashboard" onclick="showView('dashboard')">
+      <i class="fa fa-chart-bar"></i><span>Stats</span>
+    </button>
+    <button class="bn-btn" id="bn-contacts" onclick="showView('contacts')">
+      <i class="fa fa-users"></i><span>Contatos</span>
+    </button>
+    <button class="bn-btn" id="bn-settings" onclick="showView('settings')">
+      <i class="fa fa-qrcode"></i><span>Config</span>
+    </button>
+  </nav>
+
   <!-- CONTEÚDO -->
   <div id="content">
 
@@ -294,6 +363,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
         </div>
         <div id="chat-main" class="hidden" style="display:flex;flex-direction:column;flex:1">
           <div id="chat-header">
+            <button id="chat-back-btn" onclick="mobileBackToList()" title="Voltar"><i class="fa fa-arrow-left"></i></button>
             <div class="avatar" id="chat-avatar">?</div>
             <div class="info">
               <div class="name" id="chat-name">-</div>
@@ -802,6 +872,10 @@ function playNotif() {
 // ═══════════════════════════════════════════════════════
 function showView(view) {
   currentView = view;
+  // On mobile, going to a view (not tickets) should close chat
+  if (window.innerWidth < 768 && view !== 'tickets') {
+    $('app').classList.remove('mobile-chat');
+  }
   const views = ['tickets','kanban','dashboard','contacts','settings'];
   views.forEach(v => {
     const el = $(v + '-view');
@@ -811,13 +885,24 @@ function showView(view) {
   if (el) el.style.display = 'flex';
 
   document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.bn-btn').forEach(b => b.classList.remove('active'));
   const nb = $('nav-' + view);
   if (nb) nb.classList.add('active');
+  const bn = $('bn-' + view);
+  if (bn) bn.classList.add('active');
 
   if (view === 'kanban')    loadKanban();
   if (view === 'dashboard') loadDashboard();
   if (view === 'contacts')  loadContacts();
   if (view === 'settings')  loadSettings();
+}
+
+function mobileBackToList() {
+  $('app').classList.remove('mobile-chat');
+  currentTicket = null;
+  $('chat-main').style.display = 'none';
+  $('chat-empty').style.display = 'flex';
+  if (_humanPanelOpen) toggleHumanPanel();
 }
 
 // ═══════════════════════════════════════════════════════
@@ -890,8 +975,15 @@ function ticketItemHTML(t) {
 function updateBadge() {
   const n = allTickets.filter(t => t.unread_count > 0).length;
   const b = $('badge-tickets');
-  if (n > 0) { b.textContent = n > 99 ? '99+' : n; b.classList.remove('hidden'); }
-  else b.classList.add('hidden');
+  const bb = $('bn-badge');
+  if (n > 0) {
+    const txt = n > 99 ? '99+' : n;
+    b.textContent = txt; b.classList.remove('hidden');
+    bb.textContent = txt; bb.classList.remove('hidden');
+  } else {
+    b.classList.add('hidden');
+    bb.classList.add('hidden');
+  }
 }
 
 async function openTicket(id) {
@@ -907,6 +999,7 @@ async function openTicket(id) {
   $('chat-main').style.display = 'flex';
   $('chat-main').classList.remove('hidden');
 
+  if (window.innerWidth < 768) $('app').classList.add('mobile-chat');
   renderChatHeader(t);
   if (_humanPanelOpen) fillHumanPanel(t);
   await loadMessages(id);
