@@ -476,7 +476,7 @@ def api_evo_create_instance():
     url      = models.get_setting("evo_url",      config.EVOLUTION_URL)
     key      = models.get_setting("evo_key",      config.EVOLUTION_KEY)
     instance = models.get_setting("evo_instance", config.INSTANCE_NAME)
-    payload  = json.dumps({"instanceName": instance, "qrcode": True}).encode()
+    payload  = json.dumps({"instanceName": instance, "qrcode": True, "integration": "WHATSAPP-BAILEYS"}).encode()
     try:
         req = urllib.request.Request(
             f"{url}/instance/create",
