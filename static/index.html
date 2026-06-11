@@ -567,6 +567,30 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
           </div>
         </div>
 
+        <!-- Configurações Gerais -->
+        <div class="settings-card" style="margin-top:16px">
+          <h3><i class="fa fa-sliders-h" style="color:var(--blue)"></i> Configurações Gerais</h3>
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 0;border-bottom:1px solid var(--border)">
+            <div>
+              <div style="font-weight:600;font-size:.92rem">Responder mensagens de grupos</div>
+              <div style="font-size:.8rem;color:var(--gray);margin-top:2px">Quando ativado, o agente IA responderá mensagens recebidas em grupos do WhatsApp</div>
+            </div>
+            <label style="position:relative;display:inline-block;width:46px;height:26px;flex-shrink:0;margin-left:18px">
+              <input type="checkbox" id="toggle-reply-groups" onchange="saveGeneralSettings()" style="opacity:0;width:0;height:0">
+              <span style="position:absolute;cursor:pointer;top:0;left:0;right:0;bottom:0;background:#ccc;border-radius:26px;transition:.3s"
+                    id="toggle-reply-groups-slider"></span>
+            </label>
+          </div>
+          <style>
+            #toggle-reply-groups:checked + #toggle-reply-groups-slider { background: var(--green); }
+            #toggle-reply-groups-slider:before {
+              content:""; position:absolute; height:20px; width:20px; left:3px; bottom:3px;
+              background:white; border-radius:50%; transition:.3s;
+            }
+            #toggle-reply-groups:checked + #toggle-reply-groups-slider:before { transform:translateX(20px); }
+          </style>
+        </div>
+
         <!-- Evolution API -->
         <div class="settings-card" style="margin-top:16px">
           <h3><i class="fa fa-plug" style="color:var(--green)"></i> Evolution API / Evolution GO</h3>
@@ -1145,6 +1169,8 @@ async function loadSettings() {
   $('info-instance').textContent = (health||{}).instance || '-';
   // AI settings
   await loadAISettings();
+  // General settings
+  await loadGeneralSettings();
   // Evolution settings
   await loadEvoSettings();
   // QR Code
@@ -1201,6 +1227,21 @@ function resetPrompt() {
   if (!confirm('Restaurar o prompt padrão do ChatAtender?')) return;
   $('ai-prompt').value = '';
   toast('Prompt limpo — será usado o padrão ao salvar.');
+}
+
+async function loadGeneralSettings() {
+  const data = await api('GET', '/api/settings/general');
+  if (!data) return;
+  const cb = $('toggle-reply-groups');
+  if (cb) cb.checked = data.reply_groups === '1';
+}
+
+async function saveGeneralSettings() {
+  const cb = $('toggle-reply-groups');
+  const res = await api('POST', '/api/settings/general', { reply_groups: cb && cb.checked });
+  if (res && res.ok) {
+    toast(cb.checked ? '✅ Resposta para grupos ativada' : '🔕 Resposta para grupos desativada');
+  }
 }
 
 async function loadEvoSettings() {

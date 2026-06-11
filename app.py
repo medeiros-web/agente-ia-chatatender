@@ -162,7 +162,10 @@ def _process_webhook(data: dict) -> None:
     if key.get("fromMe"):
         return
     remote_jid = key.get("remoteJid", "")
-    if "@g.us" in remote_jid or "@broadcast" in remote_jid:
+    is_group = "@g.us" in remote_jid
+    if "@broadcast" in remote_jid:
+        return
+    if is_group and models.get_setting("reply_groups", "0") != "1":
         return
 
     msg_id = key.get("id", "")
@@ -448,6 +451,23 @@ def api_evo_settings_save():
     for k, v in body.items():
         if k in {"url", "key", "instance", "version"}:
             models.set_setting(f"evo_{k}", str(v))
+    return jsonify({"ok": True})
+
+
+@app.route("/api/settings/general")
+@login_required
+def api_general_settings_get():
+    return jsonify({
+        "reply_groups": models.get_setting("reply_groups", "0"),
+    })
+
+
+@app.route("/api/settings/general", methods=["POST"])
+@login_required
+def api_general_settings_save():
+    body = request.get_json() or {}
+    if "reply_groups" in body:
+        models.set_setting("reply_groups", "1" if body["reply_groups"] else "0")
     return jsonify({"ok": True})
 
 
