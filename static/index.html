@@ -81,7 +81,8 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
 .ai-badge{font-size:.6rem;background:#f3e8ff;color:#6b21a8;padding:1px 5px;border-radius:4px}
 
 /* ── CHAT ── */
-#chat-area{flex:1;display:flex;flex-direction:column;background:var(--bg)}
+#chat-area{flex:1;display:flex;flex-direction:row;background:var(--bg);overflow:hidden}
+#chat-area>div:first-child{flex:1;display:flex;flex-direction:column;overflow:hidden;background:var(--bg)}
 #chat-empty{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;color:var(--gray);gap:12px}
 #chat-empty i{font-size:3rem;opacity:.3}
 #chat-header{background:var(--white);padding:12px 16px;display:flex;align-items:center;gap:12px;border-bottom:1px solid var(--border)}
@@ -179,6 +180,35 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
 .info-label{color:var(--gray)}
 .info-val{font-weight:600}
 
+/* ── PAINEL LATERAL HUMANO ── */
+#human-panel{width:280px;background:var(--white);border-left:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0;transition:width .25s,opacity .25s;overflow:hidden}
+#human-panel.collapsed{width:0;opacity:0;pointer-events:none}
+#human-panel-inner{width:280px;display:flex;flex-direction:column;height:100%;overflow-y:auto;padding:0 0 16px 0}
+.hp-section{padding:14px 16px;border-bottom:1px solid var(--border)}
+.hp-section:last-child{border-bottom:none}
+.hp-title{font-size:.72rem;font-weight:700;color:var(--gray);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px;display:flex;align-items:center;gap:6px}
+.hp-row{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:7px;font-size:.82rem}
+.hp-row:last-child{margin-bottom:0}
+.hp-label{color:var(--gray);flex-shrink:0}
+.hp-val{font-weight:600;text-align:right;word-break:break-all}
+.hp-actions{display:flex;flex-direction:column;gap:7px}
+.hp-btn{width:100%;padding:8px 12px;border-radius:8px;border:none;cursor:pointer;font-size:.8rem;font-weight:600;display:flex;align-items:center;gap:7px;transition:.15s}
+.hp-btn:hover{filter:brightness(.93)}
+.hp-btn-human{background:#dbeafe;color:#1e40af}
+.hp-btn-resolve{background:#d1fae5;color:#065f46}
+.hp-btn-close{background:#fee2e2;color:#b91c1c}
+.hp-btn-transfer{background:#fef3c7;color:#92400e}
+.hp-note-input{width:100%;border:1.5px solid var(--border);border-radius:8px;padding:8px 10px;font-size:.8rem;resize:none;outline:none;font-family:inherit;transition:.2s;min-height:72px}
+.hp-note-input:focus{border-color:var(--green)}
+.hp-note-save{margin-top:7px;padding:7px 14px;background:var(--green);color:#fff;border:none;border-radius:7px;font-size:.78rem;font-weight:600;cursor:pointer;width:100%}
+.hp-note-save:hover{background:var(--green-dark)}
+.hp-note-list{display:flex;flex-direction:column;gap:7px;margin-top:8px}
+.hp-note-item{background:#f8fafc;border-radius:7px;padding:8px 10px;font-size:.78rem;color:var(--text);border-left:3px solid var(--green)}
+.hp-note-item .note-ts{font-size:.68rem;color:var(--gray);margin-top:3px}
+.toggle-hp-btn{width:32px;height:32px;border-radius:8px;border:none;background:var(--bg);color:var(--gray);cursor:pointer;font-size:.95rem;display:flex;align-items:center;justify-content:center;transition:.15s;flex-shrink:0}
+.toggle-hp-btn:hover{background:var(--border);color:var(--text)}
+.toggle-hp-btn.active{background:#dbeafe;color:#1e40af}
+
 /* ── UTILITÁRIOS ── */
 .hidden{display:none!important}
 ::-webkit-scrollbar{width:5px}
@@ -256,7 +286,8 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
         </div>
         <div id="ticket-list"><div class="spinner" style="margin-top:40px"></div></div>
       </div>
-      <div id="chat-area">
+      <div id="chat-area" style="display:flex;flex:1;overflow:hidden">
+        <div style="display:flex;flex-direction:column;flex:1;overflow:hidden">
         <div id="chat-empty">
           <i class="fa fa-comments"></i>
           <p>Selecione um atendimento para começar</p>
@@ -278,6 +309,9 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
               <button class="chat-action-btn btn-close" onclick="closeTicket()">
                 <i class="fa fa-times"></i> Fechar
               </button>
+              <button class="toggle-hp-btn" id="toggle-hp-btn" onclick="toggleHumanPanel()" title="Painel de atendimento humano">
+                <i class="fa fa-user-circle"></i>
+              </button>
             </div>
           </div>
           <div id="messages"></div>
@@ -287,7 +321,64 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
             <button id="send-btn" onclick="sendMessage()"><i class="fa fa-paper-plane"></i></button>
           </div>
         </div>
-      </div>
+        </div><!-- /chat column -->
+
+        <!-- PAINEL LATERAL HUMANO -->
+        <div id="human-panel" class="collapsed">
+          <div id="human-panel-inner">
+
+            <!-- Contato -->
+            <div class="hp-section">
+              <div class="hp-title"><i class="fa fa-user"></i> Contato</div>
+              <div class="hp-row"><span class="hp-label">Nome</span><span class="hp-val" id="hp-name">—</span></div>
+              <div class="hp-row"><span class="hp-label">Telefone</span><span class="hp-val" id="hp-phone">—</span></div>
+              <div class="hp-row"><span class="hp-label">Desde</span><span class="hp-val" id="hp-since">—</span></div>
+            </div>
+
+            <!-- Ticket -->
+            <div class="hp-section">
+              <div class="hp-title"><i class="fa fa-ticket-alt"></i> Ticket</div>
+              <div class="hp-row"><span class="hp-label">ID</span><span class="hp-val" id="hp-tid">—</span></div>
+              <div class="hp-row"><span class="hp-label">Status</span><span class="hp-val" id="hp-status">—</span></div>
+              <div class="hp-row"><span class="hp-label">Fila</span><span class="hp-val" id="hp-queue">—</span></div>
+              <div class="hp-row"><span class="hp-label">Atendente</span><span class="hp-val" id="hp-agent">—</span></div>
+              <div class="hp-row"><span class="hp-label">IA</span><span class="hp-val" id="hp-ai">—</span></div>
+            </div>
+
+            <!-- Ações -->
+            <div class="hp-section">
+              <div class="hp-title"><i class="fa fa-hand-paper"></i> Atendimento Humano</div>
+              <div class="hp-actions">
+                <button class="hp-btn hp-btn-human" onclick="assumeAttendance()">
+                  <i class="fa fa-headset"></i> Assumir Atendimento
+                </button>
+                <button class="hp-btn hp-btn-human" onclick="toggleAI()">
+                  <i class="fa fa-robot"></i> <span id="hp-ai-toggle-lbl">Desativar IA</span>
+                </button>
+                <button class="hp-btn hp-btn-resolve" onclick="resolveTicket()">
+                  <i class="fa fa-check-circle"></i> Marcar Resolvido
+                </button>
+                <button class="hp-btn hp-btn-transfer" onclick="showTransferModal()">
+                  <i class="fa fa-exchange-alt"></i> Transferir Fila
+                </button>
+                <button class="hp-btn hp-btn-close" onclick="closeTicket()">
+                  <i class="fa fa-times-circle"></i> Fechar Ticket
+                </button>
+              </div>
+            </div>
+
+            <!-- Notas internas -->
+            <div class="hp-section">
+              <div class="hp-title"><i class="fa fa-sticky-note"></i> Notas Internas</div>
+              <textarea id="hp-note-input" class="hp-note-input" placeholder="Adicionar nota interna (visível só para agentes)..."></textarea>
+              <button class="hp-note-save" onclick="saveNote()"><i class="fa fa-plus"></i> Salvar Nota</button>
+              <div class="hp-note-list" id="hp-note-list"></div>
+            </div>
+
+          </div>
+        </div><!-- /human-panel -->
+
+      </div><!-- /chat-area -->
     </div>
 
     <!-- KANBAN VIEW -->
@@ -655,6 +746,7 @@ function initSocket() {
     if (currentTicket && currentTicket.id == ticket.id) {
       currentTicket = ticket;
       renderChatHeader(ticket);
+      if (_humanPanelOpen) fillHumanPanel(ticket);
     }
     updateBadge();
   });
@@ -792,6 +884,7 @@ async function openTicket(id) {
   $('chat-main').classList.remove('hidden');
 
   renderChatHeader(t);
+  if (_humanPanelOpen) fillHumanPanel(t);
   await loadMessages(id);
   t.unread_count = 0;
   updateBadge();
@@ -1220,6 +1313,101 @@ function updateConnStatus(state) {
     sdot.style.background = s.color;
     sdot.className = 'status-dot' + (s.connected ? ' connected' : '');
     sdot.title = 'WhatsApp: ' + s.label;
+  }
+}
+
+// ═══════════════════════════════════════════════════════
+//  PAINEL LATERAL HUMANO
+// ═══════════════════════════════════════════════════════
+let _humanPanelOpen = false;
+let _notes = {};  // ticket_id → [{text, ts}]
+
+function toggleHumanPanel() {
+  _humanPanelOpen = !_humanPanelOpen;
+  const panel = $('human-panel');
+  const btn   = $('toggle-hp-btn');
+  if (_humanPanelOpen) {
+    panel.classList.remove('collapsed');
+    btn.classList.add('active');
+    if (currentTicket) fillHumanPanel(currentTicket);
+  } else {
+    panel.classList.add('collapsed');
+    btn.classList.remove('active');
+  }
+}
+
+function fillHumanPanel(t) {
+  if (!t) return;
+  $('hp-name').textContent   = t.contact_name || t.contact_phone || '—';
+  $('hp-phone').textContent  = t.contact_phone || '—';
+  $('hp-since').textContent  = t.created_at ? new Date(t.created_at+'Z').toLocaleDateString('pt-BR') : '—';
+  $('hp-tid').textContent    = '#' + t.id;
+  $('hp-queue').textContent  = t.queue_name  || 'Sem fila';
+  $('hp-agent').textContent  = t.agent_name  || 'Não atribuído';
+  const smap = {waiting:'⏳ Aguardando', open:'💬 Em Atendimento', resolved:'✅ Resolvido', closed:'🔒 Fechado'};
+  $('hp-status').textContent = smap[t.status] || t.status;
+  $('hp-ai').textContent     = t.ai_enabled ? '🤖 Ativa' : '👤 Desativada';
+  $('hp-ai-toggle-lbl').textContent = t.ai_enabled ? 'Desativar IA' : 'Ativar IA';
+  renderNotes(t.id);
+}
+
+function renderNotes(tid) {
+  const list = _notes[tid] || [];
+  const el = $('hp-note-list');
+  if (!list.length) { el.innerHTML = '<p style="font-size:.75rem;color:var(--gray)">Nenhuma nota ainda.</p>'; return; }
+  el.innerHTML = list.slice().reverse().map(n => `
+    <div class="hp-note-item">
+      ${escHtml(n.text)}
+      <div class="note-ts">${n.agent} · ${n.ts}</div>
+    </div>
+  `).join('');
+}
+
+function saveNote() {
+  if (!currentTicket) return;
+  const input = $('hp-note-input');
+  const text = input.value.trim();
+  if (!text) return;
+  const tid = currentTicket.id;
+  if (!_notes[tid]) _notes[tid] = [];
+  _notes[tid].push({
+    text,
+    agent: currentUser?.name || 'Agente',
+    ts: new Date().toLocaleString('pt-BR'),
+  });
+  input.value = '';
+  renderNotes(tid);
+  toast('📝 Nota salva');
+}
+
+async function assumeAttendance() {
+  if (!currentTicket || !currentUser) return;
+  const updated = await api('PATCH', `/api/tickets/${currentTicket.id}`, {
+    assigned_to: currentUser.id,
+    status: 'open',
+    ai_enabled: 0,
+  });
+  if (updated) {
+    currentTicket = updated;
+    renderChatHeader(updated);
+    fillHumanPanel(updated);
+    toast('👤 Você assumiu o atendimento — IA desativada');
+  }
+}
+
+async function showTransferModal() {
+  const queues = await api('GET', '/api/queues');
+  if (!queues || !queues.length) { toast('Nenhuma fila disponível'); return; }
+  const opts = queues.map(q => `${q.id}: ${q.name}`).join('\n');
+  const choice = prompt(`Transferir para qual fila?\n\n${opts}\n\nDigite o ID:`);
+  if (!choice) return;
+  const qid = parseInt(choice);
+  if (!qid) { toast('ID inválido'); return; }
+  const updated = await api('PATCH', `/api/tickets/${currentTicket.id}`, {queue_id: qid});
+  if (updated) {
+    currentTicket = updated;
+    fillHumanPanel(updated);
+    toast('✅ Ticket transferido');
   }
 }
 
