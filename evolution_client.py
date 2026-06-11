@@ -1,6 +1,12 @@
 """
 Cliente Evolution GO API — envio de mensagens, indicador de digitação,
-download de mídia, registro de webhook. Compatível com Evolution GO.
+download de mídia, registro de webhook.
+
+Modelo de autenticação Evolution GO:
+  - Operações globais (/instance/all, /instance/create): apikey = GLOBAL_API_KEY
+  - Operações de instância (/send/text, /instance/status, etc.): apikey = INSTANCE_TOKEN
+    onde INSTANCE_TOKEN é o campo "token" criado junto com a instância
+    (por padrão, definimos token = INSTANCE_NAME na criação)
 """
 import json
 import time
@@ -13,48 +19,39 @@ import config
 
 log = logging.getLogger(__name__)
 
-# Cache do UUID da instância
-_instance_id_cache: str = ""
+# Token da instância (= config.INSTANCE_NAME por padrão, atualizado após create)
+_instance_token: str = ""
 
 
-def _get_instance_id() -> str:
-    """Retorna o UUID da instância pelo nome. Cacheia o resultado."""
-    global _instance_id_cache
-    if _instance_id_cache:
-        return _instance_id_cache
-    try:
-        result = _request_base("GET", "/instance/all", timeout=10, retries=False)
-        for inst in result.get("data", []):
-            if inst.get("name") == config.INSTANCE_NAME:
-                _instance_id_cache = inst["id"]
-                log.info("Instance ID encontrado: %s → %s", config.INSTANCE_NAME, _instance_id_cache)
-                return _instance_id_cache
-    except Exception as e:
-        log.debug("Falha ao buscar instanceId: %s", e)
-    return ""
+def _get_token() -> str:
+    """Retorna o token da instância para uso como apikey."""
+    return _instance_token or config.INSTANCE_NAME
 
 
-def _clear_instance_cache() -> None:
-    global _instance_id_cache
-    _instance_id_cache = ""
+def _set_token(token: str) -> None:
+    global _instance_token
+    _instance_token = token
 
 
-def _request_base(
+def _request(
     method: str,
     path: str,
     payload: dict | None = None,
-    extra_headers: dict | None = None,
+    global_auth: bool = False,
     timeout: int = 15,
     retries: bool = True,
 ) -> dict:
-    """Requisição HTTP base (sem instanceId automático)."""
+    """
+    Executa requisição HTTP contra a Evolution GO API.
+    global_auth=True usa GLOBAL_API_KEY (para operações globais).
+    global_auth=False usa INSTANCE_TOKEN (para operações de instância).
+    """
     url = f"{config.EVOLUTION_URL}{path}"
+    api_key = config.EVOLUTION_KEY if global_auth else _get_token()
     headers = {
-        "apikey": config.EVOLUTION_KEY,
+        "apikey": api_key,
         "Content-Type": "application/json",
     }
-    if extra_headers:
-        headers.update(extra_headers)
 
     body = json.dumps(payload).encode() if payload is not None else None
     max_attempts = config.MAX_RETRIES if retries else 1
@@ -82,33 +79,12 @@ def _request_base(
     raise RuntimeError(f"Falha após {max_attempts} tentativas para {path}: {last_err}")
 
 
-def _request(
-    method: str,
-    path: str,
-    payload: dict | None = None,
-    extra_headers: dict | None = None,
-    timeout: int = 15,
-    retries: bool = True,
-) -> dict:
-    """Requisição com instanceId header automático."""
-    instance_id = _get_instance_id()
-    headers = {}
-    if instance_id:
-        headers["instanceId"] = instance_id
-    if extra_headers:
-        headers.update(extra_headers)
-    return _request_base(method, path, payload, headers, timeout, retries)
-
-
 # ── Mensagem de texto ─────────────────────────────────────────────────────────
 
 def send_text(phone: str, text: str) -> bool:
     """Envia mensagem de texto via Evolution GO. Retorna True em caso de sucesso."""
     try:
-        _request("POST", "/send/text", {
-            "number": phone,
-            "text": text,
-        })
+        _request("POST", "/send/text", {"number": phone, "text": text})
         log.info("✓ Mensagem enviada → %s", phone)
         return True
     except Exception as e:
@@ -137,16 +113,16 @@ def send_typing(phone: str, duration_ms: int = 2000) -> None:
 def download_media(message_id: str) -> Optional[bytes]:
     """Baixa a mídia de uma mensagem pelo ID. Retorna bytes ou None."""
     try:
-        result = _request(
-            "POST",
-            "/message/downloadimage",
-            {"messageId": message_id},
-            timeout=30,
-        )
+        result = _request("POST", "/message/downloadimage", {"messageId": message_id}, timeout=30)
         import base64
-        b64 = result.get("base64") or result.get("data") or result.get("media") or ""
+        b64 = (
+            result.get("data", {}).get("base64")
+            or result.get("data", {}).get("media")
+            or result.get("base64")
+            or result.get("media")
+            or ""
+        )
         if b64:
-            # Remove data URI prefix if present
             if "," in b64:
                 b64 = b64.split(",", 1)[1]
             return base64.b64decode(b64)
@@ -158,18 +134,13 @@ def download_media(message_id: str) -> Optional[bytes]:
 # ── Registro de webhook ───────────────────────────────────────────────────────
 
 def register_webhook(public_url: str) -> bool:
-    """Configura webhook na instância Evolution GO."""
-    _clear_instance_cache()
-    instance_id = _get_instance_id()
-    if not instance_id:
-        log.warning("Instância '%s' não encontrada — webhook não registrado", config.INSTANCE_NAME)
-        return False
+    """Conecta instância e configura webhook na Evolution GO API."""
     try:
-        _request_base("POST", "/instance/connect", {
+        _request("POST", "/instance/connect", {
             "webhookUrl": f"{public_url}/webhook",
-            "subscribe": ["MESSAGE"],
+            "subscribe": ["MESSAGE", "CONNECTION"],
             "immediate": True,
-        }, extra_headers={"instanceId": instance_id})
+        })
         log.info("Webhook registrado: %s/webhook", public_url)
         return True
     except Exception as e:
@@ -180,18 +151,18 @@ def register_webhook(public_url: str) -> bool:
 # ── Status da instância ───────────────────────────────────────────────────────
 
 def get_instance_status() -> dict:
-    """Retorna status da instância normalizado para formato clássico."""
+    """Retorna status da instância normalizado."""
     try:
-        instance_id = _get_instance_id()
-        if not instance_id:
-            return {"instance": {"state": "unknown"}}
-        result = _request_base(
-            "GET", "/instance/status",
-            extra_headers={"instanceId": instance_id},
-            timeout=5, retries=False,
-        )
-        connected = result.get("connected", False)
-        state = "open" if connected else "close"
+        result = _request("GET", "/instance/status", timeout=5, retries=False)
+        data = result.get("data", result)
+        connected = data.get("Connected", False)
+        logged_in = data.get("LoggedIn", False)
+        if connected and logged_in:
+            state = "open"
+        elif connected:
+            state = "qr"
+        else:
+            state = "close"
         return {"instance": {"state": state}, "raw": result}
     except Exception as e:
         log.debug("Falha ao obter status da instancia: %s", e)
@@ -203,19 +174,13 @@ def get_instance_status() -> dict:
 def get_qr_code() -> str:
     """Obtém QR code base64 para scan."""
     try:
-        instance_id = _get_instance_id()
-        if not instance_id:
-            return ""
-        result = _request_base(
-            "GET", "/instance/qr",
-            extra_headers={"instanceId": instance_id},
-            timeout=10, retries=False,
-        )
+        result = _request("GET", "/instance/qr", timeout=10, retries=False)
+        data = result.get("data", result)
         return (
-            result.get("base64")
-            or result.get("qrCode")
-            or result.get("qrcode")
-            or result.get("code")
+            data.get("Qrcode")
+            or data.get("qrcode")
+            or data.get("base64")
+            or data.get("QrCode")
             or ""
         )
     except Exception as e:
@@ -227,26 +192,27 @@ def get_qr_code() -> str:
 
 def create_instance() -> dict:
     """Cria a instância no Evolution GO se não existir."""
-    _clear_instance_cache()
-    existing_id = _get_instance_id()
-    if existing_id:
-        return {"ok": True, "exists": True, "id": existing_id}
     try:
-        result = _request_base("POST", "/instance/create", {
+        # Verifica se já existe
+        instances = _request("GET", "/instance/all", global_auth=True)
+        for inst in instances.get("data", []):
+            if inst.get("name") == config.INSTANCE_NAME:
+                token = inst.get("token", config.INSTANCE_NAME)
+                _set_token(token)
+                return {"ok": True, "exists": True, "id": inst["id"], "token": token}
+    except Exception:
+        pass
+
+    try:
+        result = _request("POST", "/instance/create", {
             "name": config.INSTANCE_NAME,
             "token": config.INSTANCE_NAME,
-        })
+        }, global_auth=True)
         data = result.get("data", result)
-        instance_id = data.get("id", "")
-        if instance_id:
-            _instance_id_cache_set(instance_id)
-        return {"ok": True, "exists": False, "data": data}
+        token = data.get("token", config.INSTANCE_NAME)
+        _set_token(token)
+        return {"ok": True, "exists": False, "data": data, "token": token}
     except urllib.error.HTTPError as e:
         return {"ok": False, "error": e.read().decode()[:300]}
     except Exception as e:
         return {"ok": False, "error": str(e)[:200]}
-
-
-def _instance_id_cache_set(value: str) -> None:
-    global _instance_id_cache
-    _instance_id_cache = value
