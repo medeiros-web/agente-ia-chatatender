@@ -1,0 +1,10 @@
+.env
+__pycache__/
+*.pyc
+*.pyo
+*.log
+dados.sqlite
+*.sqlite
+qrcode.png
+watcher_state.json
+.git/

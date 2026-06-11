@@ -1,0 +1,1252 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
+<meta name="mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+<meta name="apple-mobile-web-app-title" content="ChatAtender"/>
+<meta name="theme-color" content="#00a884"/>
+<meta name="description" content="Plataforma de atendimento via WhatsApp com IA"/>
+<link rel="manifest" href="/static/manifest.json"/>
+<link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'><rect width='192' height='192' rx='40' fill='%2300a884'/><text x='96' y='130' font-size='100' text-anchor='middle'>💬</text></svg>"/>
+<title>ChatAtender</title>
+<script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"/>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --green:#00a884;--green-dark:#008069;--green-light:#d9fdd3;
+  --bg:#f0f2f5;--sidebar:#1f2937;--sidebar-hover:#374151;
+  --white:#fff;--gray:#667781;--gray-light:#e9edef;
+  --red:#ef4444;--orange:#f97316;--blue:#3b82f6;--purple:#8b5cf6;
+  --text:#111827;--border:#e5e7eb;--radius:12px;
+}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--text);height:100vh;overflow:hidden}
+
+/* ── LOGIN ── */
+#login-page{display:flex;align-items:center;justify-content:center;height:100vh;background:linear-gradient(135deg,#00a884,#008069)}
+.login-card{background:var(--white);border-radius:20px;padding:48px 40px;width:380px;box-shadow:0 20px 60px rgba(0,0,0,.2);text-align:center}
+.login-card .logo{font-size:2.5rem;margin-bottom:8px}
+.login-card h1{font-size:1.6rem;font-weight:700;color:var(--green-dark);margin-bottom:4px}
+.login-card p{color:var(--gray);margin-bottom:32px;font-size:.9rem}
+.login-card input{width:100%;padding:12px 16px;border:1.5px solid var(--border);border-radius:10px;font-size:1rem;margin-bottom:14px;outline:none;transition:.2s}
+.login-card input:focus{border-color:var(--green)}
+.login-card button{width:100%;padding:13px;background:var(--green);color:#fff;border:none;border-radius:10px;font-size:1rem;font-weight:600;cursor:pointer;transition:.2s}
+.login-card button:hover{background:var(--green-dark)}
+.login-error{color:var(--red);font-size:.85rem;margin-top:8px}
+
+/* ── LAYOUT PRINCIPAL ── */
+#app{display:none;height:100vh;flex-direction:row}
+
+/* Sidebar */
+#sidebar{width:64px;background:var(--sidebar);display:flex;flex-direction:column;align-items:center;padding:16px 0;gap:6px;flex-shrink:0;transition:.3s}
+.sidebar-logo{color:#fff;font-size:1.5rem;margin-bottom:10px;padding:8px}
+.nav-btn{width:44px;height:44px;border-radius:10px;border:none;background:transparent;color:#9ca3af;font-size:1.1rem;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:.2s;position:relative}
+.nav-btn:hover,.nav-btn.active{background:var(--sidebar-hover);color:#fff}
+.nav-btn .badge{position:absolute;top:4px;right:4px;background:var(--red);color:#fff;font-size:.6rem;padding:1px 4px;border-radius:99px;min-width:16px;text-align:center}
+.sidebar-bottom{margin-top:auto;display:flex;flex-direction:column;gap:6px;align-items:center}
+.status-dot{width:10px;height:10px;border-radius:50%;background:#ef4444;margin:4px auto}
+.status-dot.connected{background:var(--green)}
+
+/* Conteúdo */
+#content{flex:1;display:flex;overflow:hidden}
+
+/* ── PAINEL ESQUERDO — lista de tickets ── */
+#ticket-panel{width:340px;background:var(--white);border-right:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0}
+.panel-header{padding:16px;border-bottom:1px solid var(--border)}
+.panel-header h2{font-size:1rem;font-weight:700;margin-bottom:10px}
+.search-box{display:flex;align-items:center;background:var(--bg);border-radius:8px;padding:8px 12px;gap:8px}
+.search-box input{border:none;background:transparent;flex:1;outline:none;font-size:.9rem}
+.filter-tabs{display:flex;gap:4px;margin-top:10px;flex-wrap:wrap}
+.filter-tab{padding:4px 10px;border-radius:99px;font-size:.75rem;font-weight:600;border:none;cursor:pointer;background:var(--gray-light);color:var(--gray);transition:.2s}
+.filter-tab.active{background:var(--green);color:#fff}
+#ticket-list{flex:1;overflow-y:auto;padding:8px}
+.ticket-item{padding:12px;border-radius:10px;cursor:pointer;display:flex;gap:10px;margin-bottom:4px;transition:.15s;position:relative}
+.ticket-item:hover{background:var(--bg)}
+.ticket-item.active{background:#e7f5f2}
+.ticket-avatar{width:44px;height:44px;border-radius:50%;background:var(--green);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:1.1rem;flex-shrink:0}
+.ticket-info{flex:1;min-width:0}
+.ticket-name{font-weight:600;font-size:.9rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ticket-preview{font-size:.8rem;color:var(--gray);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
+.ticket-meta{display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex-shrink:0}
+.ticket-time{font-size:.7rem;color:var(--gray)}
+.ticket-unread{background:var(--green);color:#fff;border-radius:99px;font-size:.7rem;padding:2px 6px;font-weight:700;min-width:20px;text-align:center}
+.status-badge{font-size:.65rem;padding:2px 6px;border-radius:99px;font-weight:600}
+.status-waiting{background:#fef3c7;color:#92400e}
+.status-open{background:#dbeafe;color:#1e40af}
+.status-resolved{background:#d1fae5;color:#065f46}
+.ai-badge{font-size:.6rem;background:#f3e8ff;color:#6b21a8;padding:1px 5px;border-radius:4px}
+
+/* ── CHAT ── */
+#chat-area{flex:1;display:flex;flex-direction:column;background:var(--bg)}
+#chat-empty{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;color:var(--gray);gap:12px}
+#chat-empty i{font-size:3rem;opacity:.3}
+#chat-header{background:var(--white);padding:12px 16px;display:flex;align-items:center;gap:12px;border-bottom:1px solid var(--border)}
+#chat-header .avatar{width:40px;height:40px;border-radius:50%;background:var(--green);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;flex-shrink:0}
+#chat-header .info{flex:1}
+#chat-header .info .name{font-weight:700;font-size:.95rem}
+#chat-header .info .sub{font-size:.75rem;color:var(--gray)}
+.chat-actions{display:flex;gap:8px}
+.chat-action-btn{padding:6px 12px;border-radius:8px;border:none;cursor:pointer;font-size:.8rem;font-weight:600;transition:.2s;display:flex;align-items:center;gap:5px}
+.btn-ai{background:#f3e8ff;color:#6b21a8}
+.btn-ai.off{background:var(--gray-light);color:var(--gray)}
+.btn-resolve{background:var(--green-light);color:var(--green-dark)}
+.btn-close{background:#fee2e2;color:#b91c1c}
+#messages{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:4px}
+.msg{max-width:65%;padding:8px 12px;border-radius:10px;font-size:.88rem;line-height:1.45;word-break:break-word;position:relative}
+.msg-in{background:var(--white);border-bottom-left-radius:3px;align-self:flex-start}
+.msg-out{background:var(--green-light);border-bottom-right-radius:3px;align-self:flex-end}
+.msg-time{font-size:.65rem;color:var(--gray);margin-top:3px;text-align:right}
+.msg-date-sep{text-align:center;color:var(--gray);font-size:.75rem;margin:8px 0;background:rgba(255,255,255,.7);padding:4px 12px;border-radius:99px;align-self:center}
+#chat-input-area{background:var(--white);padding:12px 16px;display:flex;gap:10px;align-items:flex-end;border-top:1px solid var(--border)}
+#msg-input{flex:1;border:1.5px solid var(--border);border-radius:10px;padding:10px 14px;font-size:.9rem;outline:none;resize:none;max-height:120px;font-family:inherit;transition:.2s}
+#msg-input:focus{border-color:var(--green)}
+#send-btn{width:42px;height:42px;background:var(--green);color:#fff;border:none;border-radius:50%;cursor:pointer;font-size:1rem;transition:.2s;flex-shrink:0}
+#send-btn:hover{background:var(--green-dark)}
+
+/* ── KANBAN ── */
+#kanban-view{display:none;flex:1;padding:20px;overflow-x:auto;gap:16px;flex-direction:row;align-items:flex-start}
+.kanban-col{background:var(--gray-light);border-radius:var(--radius);min-width:280px;flex:1;max-width:340px;display:flex;flex-direction:column}
+.kanban-col-header{padding:12px 16px;font-weight:700;font-size:.9rem;display:flex;align-items:center;justify-content:space-between;border-radius:var(--radius) var(--radius) 0 0}
+.kanban-col-header .col-count{background:rgba(0,0,0,.12);color:inherit;padding:2px 8px;border-radius:99px;font-size:.75rem}
+.col-waiting .kanban-col-header{background:#fbbf24;color:#78350f}
+.col-open .kanban-col-header{background:#60a5fa;color:#1e3a8a}
+.col-resolved .kanban-col-header{background:#34d399;color:#064e3b}
+.kanban-cards{padding:8px;min-height:120px;display:flex;flex-direction:column;gap:8px}
+.kanban-card{background:var(--white);border-radius:10px;padding:12px;cursor:pointer;box-shadow:0 1px 4px rgba(0,0,0,.08);transition:.2s}
+.kanban-card:hover{box-shadow:0 4px 12px rgba(0,0,0,.12);transform:translateY(-1px)}
+.kanban-card.sortable-ghost{opacity:.4}
+.kanban-card.sortable-drag{box-shadow:0 8px 24px rgba(0,0,0,.18)}
+.kcard-top{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.kcard-avatar{width:32px;height:32px;border-radius:50%;background:var(--green);color:#fff;display:flex;align-items:center;justify-content:center;font-size:.8rem;font-weight:700;flex-shrink:0}
+.kcard-name{font-weight:600;font-size:.85rem;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.kcard-msg{font-size:.78rem;color:var(--gray);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:6px}
+.kcard-footer{display:flex;align-items:center;justify-content:space-between}
+.kcard-time{font-size:.68rem;color:var(--gray)}
+.kcard-badges{display:flex;gap:4px}
+
+/* ── DASHBOARD ── */
+#dashboard-view{display:none;flex:1;overflow-y:auto;padding:24px}
+.dash-title{font-size:1.3rem;font-weight:700;margin-bottom:20px}
+.stats-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:14px;margin-bottom:24px}
+.stat-card{background:var(--white);border-radius:var(--radius);padding:20px;display:flex;flex-direction:column;gap:6px;box-shadow:0 1px 4px rgba(0,0,0,.06)}
+.stat-card .stat-icon{width:40px;height:40px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:1.1rem;margin-bottom:4px}
+.stat-card .stat-value{font-size:1.8rem;font-weight:800}
+.stat-card .stat-label{font-size:.8rem;color:var(--gray);font-weight:500}
+.icon-green{background:#d1fae5;color:#059669}
+.icon-blue{background:#dbeafe;color:#2563eb}
+.icon-orange{background:#ffedd5;color:#ea580c}
+.icon-purple{background:#f3e8ff;color:#7c3aed}
+.icon-yellow{background:#fef3c7;color:#d97706}
+.icon-red{background:#fee2e2;color:#dc2626}
+.recent-title{font-size:1rem;font-weight:700;margin-bottom:12px}
+.recent-table{width:100%;border-collapse:collapse;background:var(--white);border-radius:var(--radius);overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.06)}
+.recent-table th{background:var(--bg);padding:10px 14px;text-align:left;font-size:.8rem;font-weight:600;color:var(--gray)}
+.recent-table td{padding:10px 14px;font-size:.85rem;border-top:1px solid var(--border)}
+.recent-table tr:hover td{background:#f9fafb}
+
+/* ── CONTATOS ── */
+#contacts-view{display:none;flex:1;overflow-y:auto;padding:24px}
+.contacts-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}
+.contacts-header h2{font-size:1.3rem;font-weight:700}
+.contacts-search{display:flex;align-items:center;background:var(--white);border-radius:8px;padding:8px 14px;gap:8px;border:1px solid var(--border);width:260px}
+.contacts-search input{border:none;outline:none;font-size:.9rem;flex:1}
+.contacts-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.contact-card{background:var(--white);border-radius:var(--radius);padding:16px;box-shadow:0 1px 4px rgba(0,0,0,.06);cursor:pointer;transition:.2s}
+.contact-card:hover{box-shadow:0 4px 12px rgba(0,0,0,.1)}
+.cc-avatar{width:48px;height:48px;border-radius:50%;background:var(--green);color:#fff;display:flex;align-items:center;justify-content:center;font-size:1.3rem;font-weight:700;margin-bottom:10px}
+.cc-name{font-weight:700;font-size:.95rem}
+.cc-phone{font-size:.8rem;color:var(--gray);margin-top:2px}
+
+/* ── CONFIGURAÇÕES / QR CODE ── */
+#settings-view{display:none;flex:1;overflow-y:auto;padding:24px}
+.settings-title{font-size:1.3rem;font-weight:700;margin-bottom:20px}
+.settings-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;max-width:900px}
+.settings-card{background:var(--white);border-radius:var(--radius);padding:20px;box-shadow:0 1px 4px rgba(0,0,0,.06)}
+.settings-card h3{font-size:1rem;font-weight:700;margin-bottom:14px;display:flex;align-items:center;gap:8px}
+.qr-container{display:flex;flex-direction:column;align-items:center;gap:14px}
+#qr-img{width:220px;height:220px;border-radius:12px;border:2px solid var(--border);display:flex;align-items:center;justify-content:center;background:var(--bg)}
+#qr-img img{width:100%;height:100%;border-radius:10px;object-fit:contain}
+.conn-status{display:flex;align-items:center;gap:8px;font-size:.85rem;font-weight:600}
+.conn-dot{width:10px;height:10px;border-radius:50%}
+.btn-primary{background:var(--green);color:#fff;border:none;border-radius:8px;padding:9px 18px;font-size:.85rem;font-weight:600;cursor:pointer;transition:.2s}
+.btn-primary:hover{background:var(--green-dark)}
+.info-row{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);font-size:.85rem}
+.info-row:last-child{border-bottom:none}
+.info-label{color:var(--gray)}
+.info-val{font-weight:600}
+
+/* ── UTILITÁRIOS ── */
+.hidden{display:none!important}
+::-webkit-scrollbar{width:5px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:99px}
+.toast{position:fixed;bottom:24px;right:24px;background:#1f2937;color:#fff;padding:12px 20px;border-radius:10px;font-size:.85rem;z-index:9999;animation:fadeIn .3s;pointer-events:none}
+@keyframes fadeIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+.spinner{width:32px;height:32px;border:3px solid var(--border);border-top-color:var(--green);border-radius:50%;animation:spin .8s linear infinite;margin:auto}
+@keyframes spin{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+
+<!-- LOGIN -->
+<div id="login-page">
+  <div class="login-card">
+    <div class="logo">💬</div>
+    <h1>ChatAtender</h1>
+    <p>Plataforma de atendimento via WhatsApp com IA</p>
+    <input id="login-email" type="email" placeholder="E-mail" value="medeirosassessor.adv@gmail.com"/>
+    <input id="login-pass" type="password" placeholder="Senha" value="Aa213780@"/>
+    <button onclick="doLogin()">Entrar</button>
+    <div id="login-error" class="login-error hidden"></div>
+  </div>
+</div>
+
+<!-- APP PRINCIPAL -->
+<div id="app">
+
+  <!-- SIDEBAR -->
+  <div id="sidebar">
+    <div class="sidebar-logo">💬</div>
+    <button class="nav-btn active" id="nav-tickets" onclick="showView('tickets')" title="Atendimentos">
+      <i class="fa fa-comments"></i>
+      <span class="badge hidden" id="badge-tickets">0</span>
+    </button>
+    <button class="nav-btn" id="nav-kanban" onclick="showView('kanban')" title="Kanban">
+      <i class="fa fa-columns"></i>
+    </button>
+    <button class="nav-btn" id="nav-dashboard" onclick="showView('dashboard')" title="Dashboard">
+      <i class="fa fa-chart-bar"></i>
+    </button>
+    <button class="nav-btn" id="nav-contacts" onclick="showView('contacts')" title="Contatos">
+      <i class="fa fa-users"></i>
+    </button>
+    <div class="sidebar-bottom">
+      <button class="nav-btn" id="nav-settings" onclick="showView('settings')" title="Configurações / QR Code">
+        <i class="fa fa-qrcode"></i>
+      </button>
+      <div class="status-dot" id="status-dot" title="Status conexão WhatsApp"></div>
+      <button class="nav-btn" onclick="doLogout()" title="Sair">
+        <i class="fa fa-sign-out-alt"></i>
+      </button>
+    </div>
+  </div>
+
+  <!-- CONTEÚDO -->
+  <div id="content">
+
+    <!-- TICKETS VIEW -->
+    <div id="tickets-view" style="display:flex;flex:1">
+      <div id="ticket-panel">
+        <div class="panel-header">
+          <h2>Atendimentos</h2>
+          <div class="search-box">
+            <i class="fa fa-search" style="color:var(--gray)"></i>
+            <input id="ticket-search" placeholder="Buscar..." oninput="filterTickets(this.value)"/>
+          </div>
+          <div class="filter-tabs">
+            <button class="filter-tab active" onclick="setFilter('all',this)">Todos</button>
+            <button class="filter-tab" onclick="setFilter('waiting',this)">Aguardando</button>
+            <button class="filter-tab" onclick="setFilter('open',this)">Em Atendimento</button>
+            <button class="filter-tab" onclick="setFilter('resolved',this)">Resolvidos</button>
+          </div>
+        </div>
+        <div id="ticket-list"><div class="spinner" style="margin-top:40px"></div></div>
+      </div>
+      <div id="chat-area">
+        <div id="chat-empty">
+          <i class="fa fa-comments"></i>
+          <p>Selecione um atendimento para começar</p>
+        </div>
+        <div id="chat-main" class="hidden" style="display:flex;flex-direction:column;flex:1">
+          <div id="chat-header">
+            <div class="avatar" id="chat-avatar">?</div>
+            <div class="info">
+              <div class="name" id="chat-name">-</div>
+              <div class="sub" id="chat-sub">-</div>
+            </div>
+            <div class="chat-actions">
+              <button class="chat-action-btn btn-ai" id="ai-toggle-btn" onclick="toggleAI()">
+                <i class="fa fa-robot"></i> IA On
+              </button>
+              <button class="chat-action-btn btn-resolve" onclick="resolveTicket()">
+                <i class="fa fa-check"></i> Resolver
+              </button>
+              <button class="chat-action-btn btn-close" onclick="closeTicket()">
+                <i class="fa fa-times"></i> Fechar
+              </button>
+            </div>
+          </div>
+          <div id="messages"></div>
+          <div id="chat-input-area">
+            <textarea id="msg-input" rows="1" placeholder="Digite uma mensagem..."
+              oninput="autoResize(this)" onkeydown="handleKey(event)"></textarea>
+            <button id="send-btn" onclick="sendMessage()"><i class="fa fa-paper-plane"></i></button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- KANBAN VIEW -->
+    <div id="kanban-view" style="display:none;flex:1">
+      <div style="display:flex;gap:16px;min-width:900px;width:100%;align-items:flex-start">
+        <div class="kanban-col col-waiting">
+          <div class="kanban-col-header">
+            <span>⏳ Aguardando</span>
+            <span class="col-count" id="kcount-waiting">0</span>
+          </div>
+          <div class="kanban-cards" id="kcol-waiting" data-status="waiting"></div>
+        </div>
+        <div class="kanban-col col-open">
+          <div class="kanban-col-header">
+            <span>💬 Em Atendimento</span>
+            <span class="col-count" id="kcount-open">0</span>
+          </div>
+          <div class="kanban-cards" id="kcol-open" data-status="open"></div>
+        </div>
+        <div class="kanban-col col-resolved">
+          <div class="kanban-col-header">
+            <span>✅ Resolvidos</span>
+            <span class="col-count" id="kcount-resolved">0</span>
+          </div>
+          <div class="kanban-cards" id="kcol-resolved" data-status="resolved"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- DASHBOARD VIEW -->
+    <div id="dashboard-view" style="display:none;flex:1">
+      <div class="dash-title">📊 Dashboard</div>
+      <div class="stats-grid" id="stats-grid">
+        <div class="spinner" style="margin:40px auto;grid-column:1/-1"></div>
+      </div>
+      <div class="recent-title">Atendimentos Recentes</div>
+      <table class="recent-table">
+        <thead><tr>
+          <th>Contato</th><th>Telefone</th><th>Última Mensagem</th><th>Status</th><th>Horário</th>
+        </tr></thead>
+        <tbody id="recent-tbody"></tbody>
+      </table>
+    </div>
+
+    <!-- CONTATOS VIEW -->
+    <div id="contacts-view" style="display:none;flex:1">
+      <div class="contacts-header">
+        <h2>👥 Contatos</h2>
+        <div class="contacts-search">
+          <i class="fa fa-search" style="color:var(--gray)"></i>
+          <input id="contact-search" placeholder="Buscar contato..." oninput="loadContacts(this.value)"/>
+        </div>
+      </div>
+      <div class="contacts-grid" id="contacts-grid">
+        <div class="spinner" style="margin:40px auto;grid-column:1/-1"></div>
+      </div>
+    </div>
+
+    <!-- SETTINGS / QR VIEW -->
+    <div id="settings-view" style="display:none;flex:1;overflow-y:auto;padding:24px;flex-direction:column">
+      <div class="settings-title">⚙️ Configurações</div>
+
+      <!-- Linha 1: QR Code + Info Sistema -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;max-width:960px;margin-bottom:16px">
+        <div class="settings-card">
+          <h3><i class="fa fa-qrcode" style="color:var(--green)"></i> Conexão WhatsApp</h3>
+          <div class="qr-container">
+            <div id="qr-img"><div class="spinner"></div></div>
+            <div class="conn-status">
+              <div class="conn-dot" id="conn-dot" style="background:#ef4444"></div>
+              <span id="conn-label">Desconectado</span>
+            </div>
+            <button class="btn-primary" onclick="refreshQR()">
+              <i class="fa fa-sync"></i> Atualizar QR Code
+            </button>
+          </div>
+        </div>
+        <div class="settings-card">
+          <h3><i class="fa fa-info-circle" style="color:var(--blue)"></i> Sistema &amp; Usuário</h3>
+          <div id="sys-info">
+            <div class="info-row"><span class="info-label">Instância</span><span class="info-val" id="info-instance">-</span></div>
+            <div class="info-row"><span class="info-label">Provedor IA</span><span class="info-val" id="info-ai">-</span></div>
+            <div class="info-row"><span class="info-label">Workers</span><span class="info-val" id="info-workers">-</span></div>
+            <div class="info-row"><span class="info-label">Fila</span><span class="info-val" id="info-queue">-</span></div>
+            <div class="info-row"><span class="info-label">Processadas</span><span class="info-val" id="info-processed">-</span></div>
+            <div class="info-row"><span class="info-label">Erros</span><span class="info-val" id="info-errors">-</span></div>
+            <div class="info-row"><span class="info-label">Usuário</span><span class="info-val" id="info-username">-</span></div>
+            <div class="info-row"><span class="info-label">Perfil</span><span class="info-val" id="info-role">-</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Linha 2: Configurações de IA (largura total) -->
+      <div style="max-width:960px">
+        <div class="settings-card">
+          <h3><i class="fa fa-robot" style="color:var(--purple)"></i> Configurações de Inteligência Artificial</h3>
+
+          <!-- Provedor + Modelo -->
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:18px">
+            <div>
+              <label style="font-size:.8rem;font-weight:600;color:var(--gray);display:block;margin-bottom:6px">PROVEDOR ATIVO</label>
+              <select id="ai-provider" onchange="onProviderChange()" style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.9rem;outline:none;background:var(--white)">
+                <option value="anthropic">🤖 Claude (Anthropic)</option>
+                <option value="openai">💚 GPT (OpenAI)</option>
+                <option value="gemini">🔵 Gemini (Google)</option>
+                <option value="grok">⚡ Grok (xAI)</option>
+              </select>
+            </div>
+            <div>
+              <label style="font-size:.8rem;font-weight:600;color:var(--gray);display:block;margin-bottom:6px">MODELO</label>
+              <input id="ai-model-display" type="text" placeholder="ex: claude-haiku-4-5-20251001"
+                style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.9rem;outline:none"/>
+            </div>
+          </div>
+
+          <!-- API Keys -->
+          <div style="margin-bottom:18px">
+            <p style="font-size:.8rem;font-weight:600;color:var(--gray);margin-bottom:10px;text-transform:uppercase;letter-spacing:.05em">Chaves de API</p>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+              <div>
+                <label style="font-size:.78rem;color:var(--gray);margin-bottom:4px;display:block">
+                  <i class="fa fa-robot" style="color:#7c3aed"></i> Claude (Anthropic)
+                </label>
+                <div style="position:relative">
+                  <input id="key-anthropic" type="password" placeholder="sk-ant-api03-..."
+                    style="width:100%;padding:9px 36px 9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem;outline:none;font-family:monospace"/>
+                  <i class="fa fa-eye" onclick="toggleKey(this,'key-anthropic')" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);cursor:pointer;color:var(--gray)"></i>
+                </div>
+              </div>
+              <div>
+                <label style="font-size:.78rem;color:var(--gray);margin-bottom:4px;display:block">
+                  <i class="fa fa-leaf" style="color:#16a34a"></i> GPT (OpenAI)
+                </label>
+                <div style="position:relative">
+                  <input id="key-openai" type="password" placeholder="sk-..."
+                    style="width:100%;padding:9px 36px 9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem;outline:none;font-family:monospace"/>
+                  <i class="fa fa-eye" onclick="toggleKey(this,'key-openai')" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);cursor:pointer;color:var(--gray)"></i>
+                </div>
+              </div>
+              <div>
+                <label style="font-size:.78rem;color:var(--gray);margin-bottom:4px;display:block">
+                  <i class="fa fa-circle" style="color:#2563eb"></i> Gemini (Google)
+                </label>
+                <div style="position:relative">
+                  <input id="key-gemini" type="password" placeholder="AIza..."
+                    style="width:100%;padding:9px 36px 9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem;outline:none;font-family:monospace"/>
+                  <i class="fa fa-eye" onclick="toggleKey(this,'key-gemini')" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);cursor:pointer;color:var(--gray)"></i>
+                </div>
+              </div>
+              <div>
+                <label style="font-size:.78rem;color:var(--gray);margin-bottom:4px;display:block">
+                  <i class="fa fa-bolt" style="color:#f59e0b"></i> Grok (xAI)
+                </label>
+                <div style="position:relative">
+                  <input id="key-grok" type="password" placeholder="xai-..."
+                    style="width:100%;padding:9px 36px 9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem;outline:none;font-family:monospace"/>
+                  <i class="fa fa-eye" onclick="toggleKey(this,'key-grok')" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);cursor:pointer;color:var(--gray)"></i>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Prompt do Sistema -->
+          <div style="margin-bottom:18px">
+            <label style="font-size:.8rem;font-weight:600;color:var(--gray);display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em">
+              <span><i class="fa fa-terminal"></i> Prompt do Sistema (Instrução da IA)</span>
+              <button onclick="resetPrompt()" style="background:none;border:none;font-size:.75rem;color:var(--blue);cursor:pointer;font-weight:600">
+                <i class="fa fa-undo"></i> Restaurar padrão
+              </button>
+            </label>
+            <textarea id="ai-prompt" rows="10" placeholder="Instruções para o agente de IA..."
+              style="width:100%;padding:12px;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem;outline:none;resize:vertical;font-family:'Courier New',monospace;line-height:1.5"></textarea>
+            <p style="font-size:.75rem;color:var(--gray);margin-top:4px">
+              Deixe em branco para usar o prompt padrão do ChatAtender (metodologia BANT).
+            </p>
+          </div>
+
+          <!-- Botão Salvar -->
+          <div style="display:flex;align-items:center;gap:12px">
+            <button onclick="saveAISettings()" class="btn-primary" style="padding:10px 24px;font-size:.9rem">
+              <i class="fa fa-save"></i> Salvar Configurações de IA
+            </button>
+            <span id="ai-save-status" style="font-size:.82rem;color:var(--green);display:none">
+              <i class="fa fa-check-circle"></i> Salvo com sucesso!
+            </span>
+          </div>
+        </div>
+
+        <!-- Evolution API -->
+        <div class="settings-card" style="margin-top:16px">
+          <h3><i class="fa fa-plug" style="color:var(--green)"></i> Evolution API / Evolution GO</h3>
+
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px">
+            <div>
+              <label style="font-size:.78rem;color:var(--gray);margin-bottom:4px;display:block">URL da Evolution API</label>
+              <input id="evo-url" type="url" placeholder="http://localhost:8080"
+                style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.9rem;outline:none"/>
+            </div>
+            <div>
+              <label style="font-size:.78rem;color:var(--gray);margin-bottom:4px;display:block">API Key (Global)</label>
+              <div style="position:relative">
+                <input id="evo-key" type="password" placeholder="sua-api-key"
+                  style="width:100%;padding:9px 36px 9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.9rem;outline:none;font-family:monospace"/>
+                <i class="fa fa-eye" onclick="toggleKey(this,'evo-key')" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);cursor:pointer;color:var(--gray)"></i>
+              </div>
+            </div>
+            <div>
+              <label style="font-size:.78rem;color:var(--gray);margin-bottom:4px;display:block">Nome da Instância</label>
+              <input id="evo-instance" type="text" placeholder="meu-agente"
+                style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.9rem;outline:none"/>
+            </div>
+            <div>
+              <label style="font-size:.78rem;color:var(--gray);margin-bottom:4px;display:block">Versão</label>
+              <select id="evo-version" style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.9rem;outline:none;background:var(--white)">
+                <option value="evolution-api">Evolution API (v1/v2)</option>
+                <option value="evolution-go">Evolution GO</option>
+              </select>
+            </div>
+          </div>
+
+          <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+            <button onclick="saveEvoSettings()" class="btn-primary" style="padding:10px 24px;font-size:.9rem">
+              <i class="fa fa-save"></i> Salvar Evolution
+            </button>
+            <button onclick="testEvoConnection()" style="padding:10px 18px;border:1.5px solid var(--green);background:none;color:var(--green);border-radius:8px;font-size:.85rem;font-weight:600;cursor:pointer">
+              <i class="fa fa-wifi"></i> Testar Conexão
+            </button>
+            <button onclick="createEvoInstance()" style="padding:10px 18px;border:1.5px solid var(--blue);background:none;color:var(--blue);border-radius:8px;font-size:.85rem;font-weight:600;cursor:pointer">
+              <i class="fa fa-plus-circle"></i> Criar Instância
+            </button>
+            <span id="evo-save-status" style="font-size:.82rem;display:none"></span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /content -->
+</div><!-- /app -->
+
+<script>
+// ═══════════════════════════════════════════════════════
+//  ESTADO GLOBAL
+// ═══════════════════════════════════════════════════════
+let currentView    = 'tickets';
+let currentTicket  = null;
+let allTickets     = [];
+let ticketFilter   = 'all';
+let searchQuery    = '';
+let currentUser    = null;
+let socket         = null;
+let kanbanSortables = [];
+
+// ═══════════════════════════════════════════════════════
+//  UTILS
+// ═══════════════════════════════════════════════════════
+const $ = id => document.getElementById(id);
+const qs = sel => document.querySelector(sel);
+
+function api(method, path, body) {
+  return fetch(path, {
+    method,
+    headers: {'Content-Type':'application/json'},
+    body: body ? JSON.stringify(body) : undefined,
+    credentials: 'include',
+  }).then(r => {
+    if (r.status === 401) { showLogin(); return null; }
+    return r.json();
+  });
+}
+
+function toast(msg, dur=3000) {
+  const el = document.createElement('div');
+  el.className = 'toast';
+  el.textContent = msg;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), dur);
+}
+
+function timeAgo(iso) {
+  if (!iso) return '';
+  const d = new Date(iso + (iso.endsWith('Z') ? '' : 'Z'));
+  const diff = (Date.now() - d.getTime()) / 1000;
+  if (diff < 60) return 'agora';
+  if (diff < 3600) return Math.floor(diff/60) + 'm';
+  if (diff < 86400) return Math.floor(diff/3600) + 'h';
+  return d.toLocaleDateString('pt-BR');
+}
+
+function formatTime(iso) {
+  if (!iso) return '';
+  const d = new Date(iso + (iso.endsWith('Z') ? '' : 'Z'));
+  return d.toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'});
+}
+
+function avatar(name) {
+  return (name || '?').charAt(0).toUpperCase();
+}
+
+function statusBadge(s) {
+  const map = {waiting:'Aguardando', open:'Atendendo', resolved:'Resolvido', closed:'Fechado'};
+  const cls = {waiting:'status-waiting', open:'status-open', resolved:'status-resolved', closed:'status-resolved'};
+  return `<span class="status-badge ${cls[s]||''}">${map[s]||s}</span>`;
+}
+
+// ═══════════════════════════════════════════════════════
+//  AUTH
+// ═══════════════════════════════════════════════════════
+async function doLogin() {
+  const email = $('login-email').value.trim();
+  const pass  = $('login-pass').value;
+  $('login-error').classList.add('hidden');
+  const data = await api('POST', '/api/auth/login', {email, password: pass});
+  if (!data) return;
+  if (data.error) {
+    $('login-error').textContent = data.error;
+    $('login-error').classList.remove('hidden');
+    return;
+  }
+  currentUser = data;
+  showApp();
+}
+
+function doLogout() {
+  api('POST', '/api/auth/logout');
+  showLogin();
+}
+
+function showLogin() {
+  $('login-page').style.display = 'flex';
+  $('app').style.display = 'none';
+  if (socket) { socket.disconnect(); socket = null; }
+}
+
+async function showApp() {
+  $('login-page').style.display = 'none';
+  $('app').style.display = 'flex';
+  initSocket();
+  showView('tickets');
+  loadTickets();
+}
+
+// ═══════════════════════════════════════════════════════
+//  SOCKET.IO
+// ═══════════════════════════════════════════════════════
+function initSocket() {
+  socket = io({transports:['websocket','polling']});
+
+  socket.on('connect', () => console.log('Socket conectado'));
+
+  socket.on('new_message', ({ticket_id, message, ticket}) => {
+    // Toca áudio
+    playNotif();
+    // Atualiza lista
+    if (ticket) updateTicketInList(ticket);
+    // Se o ticket aberto é esse, adiciona mensagem
+    if (currentTicket && currentTicket.id == ticket_id) {
+      appendMessage(message);
+    }
+    // Atualiza badge
+    updateBadge();
+  });
+
+  socket.on('ticket_updated', ticket => {
+    updateTicketInList(ticket);
+    if (currentTicket && currentTicket.id == ticket.id) {
+      currentTicket = ticket;
+      renderChatHeader(ticket);
+    }
+    updateBadge();
+  });
+
+  socket.on('qrcode', ({qrcode}) => {
+    renderQR(qrcode);
+  });
+
+  socket.on('connection_status', ({state}) => {
+    updateConnStatus(state);
+  });
+}
+
+function playNotif() {
+  try {
+    const ctx = new AudioContext();
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.connect(g); g.connect(ctx.destination);
+    o.frequency.value = 880;
+    g.gain.setValueAtTime(.2, ctx.currentTime);
+    g.gain.exponentialRampToValueAtTime(.001, ctx.currentTime + .3);
+    o.start(); o.stop(ctx.currentTime + .3);
+  } catch(e) {}
+}
+
+// ═══════════════════════════════════════════════════════
+//  NAVEGAÇÃO
+// ═══════════════════════════════════════════════════════
+function showView(view) {
+  currentView = view;
+  const views = ['tickets','kanban','dashboard','contacts','settings'];
+  views.forEach(v => {
+    const el = $(v + '-view');
+    if (el) el.style.display = 'none';
+  });
+  const el = $(view + '-view');
+  if (el) el.style.display = 'flex';
+
+  document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+  const nb = $('nav-' + view);
+  if (nb) nb.classList.add('active');
+
+  if (view === 'kanban')    loadKanban();
+  if (view === 'dashboard') loadDashboard();
+  if (view === 'contacts')  loadContacts();
+  if (view === 'settings')  loadSettings();
+}
+
+// ═══════════════════════════════════════════════════════
+//  TICKETS
+// ═══════════════════════════════════════════════════════
+async function loadTickets() {
+  const data = await api('GET', '/api/tickets');
+  if (!data) return;
+  allTickets = data;
+  renderTicketList();
+  updateBadge();
+}
+
+function updateTicketInList(ticket) {
+  const idx = allTickets.findIndex(t => t.id == ticket.id);
+  if (idx >= 0) allTickets[idx] = ticket;
+  else allTickets.unshift(ticket);
+  renderTicketList();
+}
+
+function setFilter(f, btn) {
+  ticketFilter = f;
+  document.querySelectorAll('.filter-tab').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  renderTicketList();
+}
+
+function filterTickets(q) {
+  searchQuery = q.toLowerCase();
+  renderTicketList();
+}
+
+function renderTicketList() {
+  let list = allTickets;
+  if (ticketFilter !== 'all') list = list.filter(t => t.status === ticketFilter);
+  if (searchQuery) list = list.filter(t =>
+    (t.contact_name||'').toLowerCase().includes(searchQuery) ||
+    (t.contact_phone||'').includes(searchQuery) ||
+    (t.last_message||'').toLowerCase().includes(searchQuery)
+  );
+
+  const el = $('ticket-list');
+  if (!list.length) {
+    el.innerHTML = `<p style="text-align:center;color:var(--gray);padding:40px 16px;font-size:.85rem">Nenhum atendimento encontrado</p>`;
+    return;
+  }
+  el.innerHTML = list.map(t => ticketItemHTML(t)).join('');
+}
+
+function ticketItemHTML(t) {
+  const active = currentTicket && currentTicket.id == t.id ? 'active' : '';
+  const unread = t.unread_count > 0 ? `<span class="ticket-unread">${t.unread_count}</span>` : '';
+  const aiTag  = t.ai_enabled ? `<span class="ai-badge">IA</span>` : '';
+  return `
+  <div class="ticket-item ${active}" onclick="openTicket(${t.id})" id="titem-${t.id}">
+    <div class="ticket-avatar">${avatar(t.contact_name)}</div>
+    <div class="ticket-info">
+      <div class="ticket-name">${t.contact_name || t.contact_phone}</div>
+      <div class="ticket-preview">${t.last_message || 'Sem mensagens'}</div>
+    </div>
+    <div class="ticket-meta">
+      <span class="ticket-time">${timeAgo(t.last_message_at)}</span>
+      ${unread}
+      ${statusBadge(t.status)}
+      ${aiTag}
+    </div>
+  </div>`;
+}
+
+function updateBadge() {
+  const n = allTickets.filter(t => t.unread_count > 0).length;
+  const b = $('badge-tickets');
+  if (n > 0) { b.textContent = n > 99 ? '99+' : n; b.classList.remove('hidden'); }
+  else b.classList.add('hidden');
+}
+
+async function openTicket(id) {
+  const t = allTickets.find(t => t.id == id) || await api('GET', `/api/tickets/${id}`);
+  if (!t) return;
+  currentTicket = t;
+
+  // Deixa o socket entrar na sala do ticket
+  if (socket) socket.emit('join_ticket', {ticket_id: id});
+
+  renderTicketList();
+  $('chat-empty').style.display = 'none';
+  $('chat-main').style.display = 'flex';
+  $('chat-main').classList.remove('hidden');
+
+  renderChatHeader(t);
+  await loadMessages(id);
+  t.unread_count = 0;
+  updateBadge();
+}
+
+function renderChatHeader(t) {
+  $('chat-avatar').textContent = avatar(t.contact_name);
+  $('chat-name').textContent   = t.contact_name || t.contact_phone;
+  $('chat-sub').textContent    = `${t.contact_phone} • ${t.queue_name || 'Sem fila'} • ${t.agent_name ? 'Atendente: '+t.agent_name : 'Não atribuído'}`;
+  const aiBtn = $('ai-toggle-btn');
+  if (t.ai_enabled) {
+    aiBtn.innerHTML = '<i class="fa fa-robot"></i> IA On';
+    aiBtn.className = 'chat-action-btn btn-ai';
+  } else {
+    aiBtn.innerHTML = '<i class="fa fa-robot"></i> IA Off';
+    aiBtn.className = 'chat-action-btn btn-ai off';
+  }
+}
+
+async function loadMessages(tid) {
+  const msgs = await api('GET', `/api/tickets/${tid}/messages?limit=60`);
+  if (!msgs) return;
+  const el = $('messages');
+  el.innerHTML = '';
+  let lastDate = '';
+  msgs.forEach(m => {
+    const d = (m.created_at||'').substring(0,10);
+    if (d !== lastDate) {
+      lastDate = d;
+      const sep = document.createElement('div');
+      sep.className = 'msg-date-sep';
+      sep.textContent = new Date(d).toLocaleDateString('pt-BR', {day:'2-digit',month:'long'});
+      el.appendChild(sep);
+    }
+    el.appendChild(buildMsgEl(m));
+  });
+  el.scrollTop = el.scrollHeight;
+}
+
+function appendMessage(m) {
+  const el = $('messages');
+  el.appendChild(buildMsgEl(m));
+  el.scrollTop = el.scrollHeight;
+}
+
+function buildMsgEl(m) {
+  const div = document.createElement('div');
+  div.className = `msg ${m.from_me ? 'msg-out' : 'msg-in'}`;
+  div.innerHTML = `${escHtml(m.body)}<div class="msg-time">${formatTime(m.created_at)}</div>`;
+  return div;
+}
+
+function escHtml(s) {
+  return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>');
+}
+
+async function sendMessage() {
+  const input = $('msg-input');
+  const text  = input.value.trim();
+  if (!text || !currentTicket) return;
+  input.value = '';
+  input.style.height = 'auto';
+  const msg = await api('POST', `/api/tickets/${currentTicket.id}/messages`, {text});
+  if (msg && msg.id) appendMessage(msg);
+}
+
+async function toggleAI() {
+  if (!currentTicket) return;
+  const newVal = currentTicket.ai_enabled ? 0 : 1;
+  const updated = await api('PATCH', `/api/tickets/${currentTicket.id}`, {ai_enabled: newVal});
+  if (updated) {
+    currentTicket = updated;
+    renderChatHeader(updated);
+    toast(newVal ? '🤖 IA ativada' : '👤 Atendimento humano');
+  }
+}
+
+async function resolveTicket() {
+  if (!currentTicket) return;
+  const updated = await api('PATCH', `/api/tickets/${currentTicket.id}`, {status:'resolved'});
+  if (updated) { currentTicket = updated; renderChatHeader(updated); toast('✅ Ticket resolvido'); }
+}
+
+async function closeTicket() {
+  if (!currentTicket) return;
+  await api('POST', `/api/tickets/${currentTicket.id}/close`);
+  currentTicket = null;
+  $('chat-main').style.display = 'none';
+  $('chat-empty').style.display = 'flex';
+  loadTickets();
+  toast('Ticket fechado');
+}
+
+function handleKey(e) {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+}
+
+function autoResize(el) {
+  el.style.height = 'auto';
+  el.style.height = Math.min(el.scrollHeight, 120) + 'px';
+}
+
+// ═══════════════════════════════════════════════════════
+//  KANBAN
+// ═══════════════════════════════════════════════════════
+async function loadKanban() {
+  const data = await api('GET', '/api/tickets/kanban');
+  if (!data) return;
+
+  kanbanSortables.forEach(s => s.destroy());
+  kanbanSortables = [];
+
+  ['waiting','open','resolved'].forEach(status => {
+    const col = $(`kcol-${status}`);
+    const cnt = $(`kcount-${status}`);
+    const cards = data[status] || [];
+    cnt.textContent = cards.length;
+    col.innerHTML = cards.map(t => kanbanCardHTML(t)).join('') || '<p style="text-align:center;color:var(--gray);font-size:.8rem;padding:20px">Vazio</p>';
+
+    const s = Sortable.create(col, {
+      group: 'kanban',
+      animation: 150,
+      ghostClass: 'sortable-ghost',
+      dragClass: 'sortable-drag',
+      onEnd: onKanbanDrop,
+    });
+    kanbanSortables.push(s);
+  });
+}
+
+function kanbanCardHTML(t) {
+  return `
+  <div class="kanban-card" data-id="${t.id}" onclick="openTicketFromKanban(${t.id})">
+    <div class="kcard-top">
+      <div class="kcard-avatar">${avatar(t.contact_name)}</div>
+      <span class="kcard-name">${t.contact_name || t.contact_phone}</span>
+      ${t.unread_count > 0 ? `<span style="background:var(--red);color:#fff;border-radius:99px;font-size:.65rem;padding:1px 6px">${t.unread_count}</span>` : ''}
+    </div>
+    <div class="kcard-msg">${t.last_message || 'Sem mensagens'}</div>
+    <div class="kcard-footer">
+      <span class="kcard-time">${timeAgo(t.last_message_at)}</span>
+      <div class="kcard-badges">
+        ${t.queue_name ? `<span style="background:${t.queue_color||'#e5e7eb'};color:#fff;padding:2px 7px;border-radius:4px;font-size:.65rem">${t.queue_name}</span>` : ''}
+        ${t.ai_enabled ? `<span class="ai-badge">IA</span>` : ''}
+      </div>
+    </div>
+  </div>`;
+}
+
+async function onKanbanDrop(evt) {
+  const id = evt.item.dataset.id;
+  const newStatus = evt.to.dataset.status;
+  if (!id || !newStatus) return;
+  await api('PATCH', `/api/tickets/${id}`, {status: newStatus});
+  // Atualiza contagens
+  ['waiting','open','resolved'].forEach(s => {
+    $(`kcount-${s}`).textContent = $(`kcol-${s}`).querySelectorAll('.kanban-card').length;
+  });
+  toast(`Ticket movido para ${newStatus}`);
+}
+
+function openTicketFromKanban(id) {
+  showView('tickets');
+  setTimeout(() => openTicket(id), 100);
+}
+
+// ═══════════════════════════════════════════════════════
+//  DASHBOARD
+// ═══════════════════════════════════════════════════════
+async function loadDashboard() {
+  const data = await api('GET', '/api/stats');
+  if (!data) return;
+
+  $('stats-grid').innerHTML = `
+    <div class="stat-card"><div class="stat-icon icon-green"><i class="fa fa-users"></i></div><div class="stat-value">${data.total_contacts}</div><div class="stat-label">Contatos</div></div>
+    <div class="stat-card"><div class="stat-icon icon-blue"><i class="fa fa-ticket-alt"></i></div><div class="stat-value">${data.total_tickets}</div><div class="stat-label">Total Tickets</div></div>
+    <div class="stat-card"><div class="stat-icon icon-orange"><i class="fa fa-clock"></i></div><div class="stat-value">${data.waiting_tickets}</div><div class="stat-label">Aguardando</div></div>
+    <div class="stat-card"><div class="stat-icon icon-blue"><i class="fa fa-comments"></i></div><div class="stat-value">${data.open_tickets}</div><div class="stat-label">Em Atendimento</div></div>
+    <div class="stat-card"><div class="stat-icon icon-green"><i class="fa fa-check-circle"></i></div><div class="stat-value">${data.resolved_today}</div><div class="stat-label">Resolvidos Hoje</div></div>
+    <div class="stat-card"><div class="stat-icon icon-purple"><i class="fa fa-envelope"></i></div><div class="stat-value">${data.messages_today}</div><div class="stat-label">Msgs Hoje</div></div>
+    <div class="stat-card"><div class="stat-icon icon-purple"><i class="fa fa-robot"></i></div><div class="stat-value">${data.ai_active}</div><div class="stat-label">IA Ativa</div></div>
+    ${data.worker ? `<div class="stat-card"><div class="stat-icon icon-orange"><i class="fa fa-cogs"></i></div><div class="stat-value">${data.worker.processed}</div><div class="stat-label">Msgs Processadas</div></div>` : ''}
+  `;
+
+  const tbody = $('recent-tbody');
+  tbody.innerHTML = (data.recent_tickets||[]).map(t => `
+    <tr onclick="openTicketFromKanban(${t.id})" style="cursor:pointer">
+      <td><b>${t.contact_name||t.phone}</b></td>
+      <td>${t.phone}</td>
+      <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${t.last_message||'-'}</td>
+      <td>${statusBadge(t.status)}</td>
+      <td>${timeAgo(t.last_message_at)}</td>
+    </tr>
+  `).join('');
+}
+
+// ═══════════════════════════════════════════════════════
+//  CONTATOS
+// ═══════════════════════════════════════════════════════
+async function loadContacts(q='') {
+  const data = await api('GET', `/api/contacts?q=${encodeURIComponent(q)}`);
+  if (!data) return;
+  const grid = $('contacts-grid');
+  if (!data.length) {
+    grid.innerHTML = '<p style="color:var(--gray);font-size:.85rem;grid-column:1/-1">Nenhum contato encontrado.</p>';
+    return;
+  }
+  grid.innerHTML = data.map(c => `
+    <div class="contact-card" onclick="startChat('${c.phone}','${escAttr(c.name||c.phone)}')">
+      <div class="cc-avatar">${avatar(c.name)}</div>
+      <div class="cc-name">${c.name||c.phone}</div>
+      <div class="cc-phone">${c.phone}</div>
+    </div>
+  `).join('');
+}
+
+function escAttr(s){ return (s||'').replace(/'/g,"\\'") }
+
+async function startChat(phone, name) {
+  showView('tickets');
+  await new Promise(r => setTimeout(r,100));
+  const t = allTickets.find(x => x.contact_phone === phone && x.status !== 'closed');
+  if (t) openTicket(t.id);
+  else toast('Nenhum atendimento aberto para este contato.');
+}
+
+// ═══════════════════════════════════════════════════════
+//  SETTINGS / QR CODE
+// ═══════════════════════════════════════════════════════
+const _PROVIDER_MODELS = {
+  anthropic: 'claude-haiku-4-5-20251001',
+  openai:    'gpt-4o-mini',
+  gemini:    'gemini-2.0-flash',
+  grok:      'grok-3-mini',
+};
+const _PROVIDER_MODEL_FIELD = {
+  anthropic: 'anthropic_model',
+  openai:    'openai_model',
+  gemini:    'gemini_model',
+  grok:      'grok_model',
+};
+let _aiSettings = {};
+
+async function loadSettings() {
+  // User info
+  if (currentUser) {
+    $('info-username').textContent = currentUser.name;
+    $('info-role').textContent     = currentUser.role === 'admin' ? 'Administrador' : 'Agente';
+  }
+  // System info
+  const health = await api('GET', '/health');
+  if (health && health.worker) {
+    $('info-workers').textContent   = health.worker.active_workers + ' ativos';
+    $('info-queue').textContent     = health.worker.queue_size + ' na fila';
+    $('info-processed').textContent = health.worker.processed;
+    $('info-errors').textContent    = health.worker.errors;
+  }
+  $('info-instance').textContent = (health||{}).instance || '-';
+  // AI settings
+  await loadAISettings();
+  // Evolution settings
+  await loadEvoSettings();
+  // QR Code
+  refreshQR();
+}
+
+async function loadAISettings() {
+  const data = await api('GET', '/api/settings/ai');
+  if (!data) return;
+  _aiSettings = data;
+  const p = data.provider || 'anthropic';
+  $('ai-provider').value         = p;
+  $('key-anthropic').value       = data.anthropic_key || '';
+  $('key-openai').value          = data.openai_key    || '';
+  $('key-gemini').value          = data.gemini_key    || '';
+  $('key-grok').value            = data.grok_key      || '';
+  $('ai-model-display').value    = data[_PROVIDER_MODEL_FIELD[p]] || _PROVIDER_MODELS[p] || '';
+  $('ai-prompt').value           = data.system_prompt || '';
+  $('info-ai').textContent       = ({anthropic:'Claude (Anthropic)', openai:'GPT (OpenAI)', gemini:'Gemini (Google)', grok:'Grok (xAI)'})[p] || p;
+}
+
+function onProviderChange() {
+  const p = $('ai-provider').value;
+  const modelField = _PROVIDER_MODEL_FIELD[p];
+  $('ai-model-display').value = (_aiSettings[modelField]) || _PROVIDER_MODELS[p] || '';
+}
+
+async function saveAISettings() {
+  const p = $('ai-provider').value;
+  const modelField = _PROVIDER_MODEL_FIELD[p];
+  const payload = {
+    provider:        p,
+    anthropic_key:   $('key-anthropic').value.trim(),
+    openai_key:      $('key-openai').value.trim(),
+    gemini_key:      $('key-gemini').value.trim(),
+    grok_key:        $('key-grok').value.trim(),
+    system_prompt:   $('ai-prompt').value.trim(),
+    [modelField]:    $('ai-model-display').value.trim(),
+  };
+  const res = await api('POST', '/api/settings/ai', payload);
+  if (res && res.ok) {
+    _aiSettings = {..._aiSettings, ...payload};
+    $('info-ai').textContent = ({anthropic:'Claude (Anthropic)', openai:'GPT (OpenAI)', gemini:'Gemini (Google)', grok:'Grok (xAI)'})[p] || p;
+    const st = $('ai-save-status');
+    st.style.display = 'inline-flex';
+    setTimeout(() => st.style.display = 'none', 3000);
+    toast('✅ Configurações de IA salvas!');
+  } else {
+    toast('❌ Erro ao salvar. Verifique o console.');
+  }
+}
+
+function resetPrompt() {
+  if (!confirm('Restaurar o prompt padrão do ChatAtender?')) return;
+  $('ai-prompt').value = '';
+  toast('Prompt limpo — será usado o padrão ao salvar.');
+}
+
+async function loadEvoSettings() {
+  const data = await api('GET', '/api/settings/evolution');
+  if (!data) return;
+  $('evo-url').value      = data.url      || '';
+  $('evo-key').value      = data.key      || '';
+  $('evo-instance').value = data.instance || '';
+  $('evo-version').value  = data.version  || 'evolution-api';
+}
+
+async function saveEvoSettings() {
+  const payload = {
+    url:      $('evo-url').value.trim(),
+    key:      $('evo-key').value.trim(),
+    instance: $('evo-instance').value.trim(),
+    version:  $('evo-version').value,
+  };
+  const res = await api('POST', '/api/settings/evolution', payload);
+  const st = $('evo-save-status');
+  if (res && res.ok) {
+    st.style.display = 'inline-flex'; st.style.color = 'var(--green)';
+    st.innerHTML = '<i class="fa fa-check-circle"></i>&nbsp;Salvo!';
+    toast('✅ Configurações Evolution salvas! Reinicie o servidor para aplicar.');
+  } else {
+    st.style.display = 'inline-flex'; st.style.color = 'var(--red)';
+    st.innerHTML = '<i class="fa fa-times-circle"></i>&nbsp;Erro ao salvar';
+  }
+  setTimeout(() => st.style.display = 'none', 4000);
+}
+
+async function testEvoConnection() {
+  const st = $('evo-save-status');
+  st.style.display = 'inline-flex'; st.style.color = 'var(--gray)';
+  st.innerHTML = '<i class="fa fa-spinner fa-spin"></i>&nbsp;Testando...';
+  const res = await api('GET', '/api/settings/evolution/test');
+  if (res && res.connected) {
+    st.style.color = 'var(--green)';
+    st.innerHTML = `<i class="fa fa-check-circle"></i>&nbsp;Conectado! (${res.state})`;
+    toast('✅ Evolution API conectada: ' + res.state);
+  } else {
+    st.style.color = 'var(--red)';
+    st.innerHTML = `<i class="fa fa-times-circle"></i>&nbsp;${res?.error || 'Sem conexão'}`;
+    toast('❌ Falha: ' + (res?.error || 'Evolution API não responde'));
+  }
+  setTimeout(() => st.style.display = 'none', 6000);
+}
+
+async function createEvoInstance() {
+  const name = $('evo-instance').value.trim();
+  if (!name) { toast('⚠️ Informe o nome da instância antes de criar.'); return; }
+  if (!confirm(`Criar instância "${name}" na Evolution API?`)) return;
+  const res = await api('POST', '/api/settings/evolution/create-instance');
+  if (res && res.ok) {
+    toast(`✅ Instância "${name}" criada! Vá em Configurações → QR Code para conectar.`);
+  } else {
+    toast('❌ Erro ao criar instância: ' + (res?.error || 'verifique URL e API Key'));
+  }
+}
+
+function toggleKey(icon, inputId) {
+  const inp = $(inputId);
+  if (inp.type === 'password') {
+    inp.type = 'text';
+    icon.className = icon.className.replace('fa-eye','fa-eye-slash');
+  } else {
+    inp.type = 'password';
+    icon.className = icon.className.replace('fa-eye-slash','fa-eye');
+  }
+}
+
+async function refreshQR() {
+  const box = $('qr-img');
+  box.innerHTML = '<div class="spinner"></div>';
+  const data = await api('GET', '/api/qrcode');
+  if (!data) return;
+  if (data.qrcode) {
+    renderQR(data.qrcode);
+  } else if (data.error) {
+    box.innerHTML = `<span style="color:var(--gray);font-size:.8rem;text-align:center;padding:16px">${data.error}</span>`;
+  }
+  // Status
+  const status = await api('GET', '/api/connection/status');
+  if (status) {
+    const state = (status.instance||{}).state || 'unknown';
+    updateConnStatus(state);
+  }
+}
+
+function renderQR(b64) {
+  const box = $('qr-img');
+  if (!b64) return;
+  box.innerHTML = `<img src="${b64}" alt="QR Code"/>`;
+}
+
+function updateConnStatus(state) {
+  const dot = $('conn-dot');
+  const lbl = $('conn-label');
+  const sdot = $('status-dot');
+  const map = {
+    open:       {color:'#00a884', label:'Conectado', connected:true},
+    connecting: {color:'#f97316', label:'Conectando…', connected:false},
+    close:      {color:'#ef4444', label:'Desconectado', connected:false},
+    qr:         {color:'#f97316', label:'Aguardando QR Code', connected:false},
+  };
+  const s = map[state] || {color:'#9ca3af', label:state, connected:false};
+  if (dot) { dot.style.background = s.color; }
+  if (lbl) lbl.textContent = s.label;
+  if (sdot) {
+    sdot.style.background = s.color;
+    sdot.className = 'status-dot' + (s.connected ? ' connected' : '');
+    sdot.title = 'WhatsApp: ' + s.label;
+  }
+}
+
+// ═══════════════════════════════════════════════════════
+//  BOOT
+// ═══════════════════════════════════════════════════════
+(async () => {
+  // Tenta restaurar sessão
+  const me = await api('GET', '/api/auth/me');
+  if (me && me.id) {
+    currentUser = me;
+    showApp();
+  }
+  // Enter no login
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && $('login-page').style.display !== 'none') doLogin();
+  });
+  // Auto-refresh dashboard a cada 60s
+  setInterval(() => { if (currentView === 'dashboard') loadDashboard(); }, 60000);
+  // Auto-refresh tickets a cada 30s
+  setInterval(() => loadTickets(), 30000);
+
+  // Registra Service Worker (PWA)
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/static/sw.js').catch(() => {});
+  }
+})();
+</script>
+</body>
+</html>
