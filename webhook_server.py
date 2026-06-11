@@ -18,7 +18,7 @@ import config
 import worker
 import dashboard
 import evolution_client as evo
-from sessions import init_db
+from models import init_db
 
 # ── Logging ───────────────────────────────────────────────────────────────────
 # Garante UTF-8 no stdout (Windows cp1252 não suporta alguns chars)

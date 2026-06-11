@@ -36,12 +36,11 @@ def handle_message(phone: str, sender_name: str, text: str) -> str | None:
         return None
 
     messages.append({"role": "user", "content": text})
-    # A mensagem já foi salva pelo webhook — não duplica aqui
+    add_message(tid, text, from_me=False)
 
     response = call_ai(messages)
 
     messages.append({"role": "assistant", "content": response})
-    # Salva resposta do assistente no banco via models
     add_message(tid, response, from_me=True)
 
     # Abre o ticket se estava aguardando
