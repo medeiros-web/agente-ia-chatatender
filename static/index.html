@@ -1625,8 +1625,15 @@ async function reconnectWhatsApp() {
   $('conn-label').textContent = 'Reconectando…';
   const res = await api('POST', '/api/settings/evolution/reconnect');
   if (res && res.ok) {
-    toast('Reconexão iniciada — aguarde o QR Code…');
-    setTimeout(refreshQR, 4000);
+    // QR pode vir direto na resposta (Evolution GO)
+    if (res.qrcode) {
+      renderQR(res.qrcode);
+      updateConnStatus('qr');
+      toast('📱 Escaneie o QR Code com o WhatsApp');
+    } else {
+      toast('Reconexão iniciada — aguardando QR Code…');
+      setTimeout(refreshQR, 4000);
+    }
   } else {
     toast('❌ ' + ((res && res.error) || 'Falha ao reconectar'));
     refreshQR();

@@ -33,7 +33,13 @@ def reload_settings() -> None:
     global _evo_url, _evo_key, _evo_instance, _evo_version, _inst_token
     try:
         import models
-        _evo_url      = models.get_setting("evo_url",      config.EVOLUTION_URL).rstrip("/")
+        raw_url = models.get_setting("evo_url", config.EVOLUTION_URL)
+        # Remove sufixo /manager ou /panel (painel web, não é a base da API)
+        for _suffix in ("/manager", "/panel", "/web"):
+            if raw_url.rstrip("/").endswith(_suffix):
+                raw_url = raw_url.rstrip("/")[: -len(_suffix)]
+                break
+        _evo_url      = raw_url.rstrip("/")
         _evo_key      = models.get_setting("evo_key",      config.EVOLUTION_KEY)
         _evo_instance = models.get_setting("evo_instance", config.INSTANCE_NAME)
         _evo_version  = models.get_setting("evo_version",  "evolution-api")
@@ -128,12 +134,23 @@ def get_instance_status() -> dict:
     """Retorna {'instance': {'state': 'open'|'qr'|'close'|'unknown'}}."""
     try:
         if _is_go():
-            # Evolution GO: GET /instance/status
-            r    = _req("GET", "/instance/status", timeout=6, retries=False)
+            try:
+                r = _req("GET", "/instance/status", timeout=6, retries=False)
+            except urllib.error.HTTPError as e:
+                body = e.read().decode(errors="replace")
+                # Evolution GO retorna 400/401 quando instância está desconectada
+                if e.code in (400, 401) and ("disconnected" in body or "not authorized" in body):
+                    return {"instance": {"state": "close"}, "error": body}
+                raise
             data = r.get("data", r)
             connected = data.get("Connected", data.get("connected", False))
             logged_in = data.get("LoggedIn",  data.get("loggedIn",  False))
-            state = "open" if (connected and logged_in) else ("qr" if connected else "close")
+            # Evolution GO também pode retornar campo "state" diretamente
+            raw_state = data.get("state", "")
+            if raw_state:
+                state = "open" if raw_state in ("open", "connected") else ("qr" if raw_state == "qr" else "close")
+            else:
+                state = "open" if (connected and logged_in) else ("qr" if connected else "close")
         else:
             # Evolution API: GET /instance/connectionState/{instance}
             r    = _req("GET", f"/instance/connectionState/{_inst()}", timeout=6, retries=False)
@@ -185,7 +202,16 @@ def connect_instance() -> dict:
             payload: dict = {"subscribe": ["MESSAGE", "CONNECTION"]}
             if config.WEBHOOK_PUBLIC_URL:
                 payload["webhookUrl"] = f"{config.WEBHOOK_PUBLIC_URL}/webhook"
-            r = _req("POST", "/instance/connect", payload, retries=False, timeout=12)
+            r = _req("POST", "/instance/connect", payload, retries=False, timeout=15)
+            # Evolution GO pode retornar o QR diretamente no connect
+            data = r.get("data", r)
+            qr = (
+                data.get("qrcode") or data.get("Qrcode") or data.get("QrCode") or
+                data.get("base64") or r.get("qrcode") or ""
+            )
+            if qr and not qr.startswith("data:"):
+                qr = f"data:image/png;base64,{qr}"
+            return {"ok": True, "data": r, "qrcode": qr}
         else:
             # Faz logout para forçar novo QR
             try:
@@ -193,7 +219,14 @@ def connect_instance() -> dict:
             except Exception:
                 pass
             r = _req("GET", f"/instance/connect/{_inst()}", retries=False, timeout=12)
-        return {"ok": True, "data": r}
+            data = r.get("data", r)
+            qr = (
+                data.get("base64") or data.get("qrcode") or data.get("code") or
+                r.get("base64") or r.get("qrcode") or ""
+            )
+            if qr and not qr.startswith("data:"):
+                qr = f"data:image/png;base64,{qr}"
+            return {"ok": True, "data": r, "qrcode": qr}
     except Exception as e:
         log.warning("connect_instance: %s", e)
         return {"ok": False, "error": str(e)[:200]}

@@ -663,6 +663,10 @@ def api_evo_reconnect():
     """Força reconexão / novo QR code."""
     evo.reload_settings()
     result = evo.connect_instance()
+    # Se o connect já retornou QR, emite via socket imediatamente
+    qr = result.get("qrcode", "")
+    if qr:
+        socketio.emit("qrcode", {"qrcode": qr}, namespace="/")
     return jsonify(result)
 
 
