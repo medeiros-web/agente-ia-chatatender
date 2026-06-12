@@ -485,6 +485,7 @@ def api_evo_settings_save():
     for k, v in body.items():
         if k in {"url", "key", "instance", "version"}:
             models.set_setting(f"evo_{k}", str(v))
+    evo.reload_settings()
     return jsonify({"ok": True})
 
 
@@ -527,12 +528,21 @@ def api_evo_test():
 @app.route("/api/settings/evolution/create-instance", methods=["POST"])
 @login_required
 def api_evo_create_instance():
+    evo.reload_settings()
     result = evo.create_instance()
     if not result.get("ok"):
         return jsonify(result), 400
-    # Registra webhook se URL configurada
     if config.WEBHOOK_PUBLIC_URL:
         evo.register_webhook(config.WEBHOOK_PUBLIC_URL)
+    return jsonify(result)
+
+
+@app.route("/api/settings/evolution/reconnect", methods=["POST"])
+@login_required
+def api_evo_reconnect():
+    """Força reconexão / novo QR code."""
+    evo.reload_settings()
+    result = evo.connect_instance()
     return jsonify(result)
 
 
@@ -593,9 +603,10 @@ def on_leave_ticket(data):
 if __name__ == "__main__":
     models.init_db()
 
-    # Carrega config de IA salva no banco (sobrescreve env vars)
+    # Carrega configs salvas no banco
     import agent_core
     agent_core.reload_settings()
+    evo.reload_settings()
 
     if config.WEBHOOK_PUBLIC_URL:
         evo.register_webhook(config.WEBHOOK_PUBLIC_URL)

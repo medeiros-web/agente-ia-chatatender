@@ -519,11 +519,19 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
             <div id="qr-img"><div class="spinner"></div></div>
             <div class="conn-status">
               <div class="conn-dot" id="conn-dot" style="background:#ef4444"></div>
-              <span id="conn-label">Desconectado</span>
+              <span id="conn-label">Verificando…</span>
             </div>
-            <button class="btn-primary" onclick="refreshQR()">
-              <i class="fa fa-sync"></i> Atualizar QR Code
-            </button>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center">
+              <button class="btn-primary" onclick="refreshQR()">
+                <i class="fa fa-sync"></i> Atualizar QR
+              </button>
+              <button onclick="reconnectWhatsApp()" style="padding:9px 16px;border:1.5px solid var(--green);background:none;color:var(--green);border-radius:8px;font-size:.85rem;font-weight:600;cursor:pointer">
+                <i class="fa fa-plug"></i> Reconectar
+              </button>
+            </div>
+            <p style="font-size:.72rem;color:var(--gray);text-align:center;margin-top:4px">
+              Escaneie com o WhatsApp → <i>Aparelhos Conectados</i>
+            </p>
           </div>
         </div>
         <div class="settings-card">
@@ -1294,23 +1302,31 @@ function onProviderChange() {
 async function saveAISettings() {
   const p = $('ai-provider').value;
   const modelField = _PROVIDER_MODEL_FIELD[p];
+  // Atualiza cache local com o modelo exibido para o provedor atual
+  _aiSettings[modelField] = $('ai-model-display').value.trim();
   const payload = {
-    provider:        p,
-    anthropic_key:   $('key-anthropic').value.trim(),
-    openai_key:      $('key-openai').value.trim(),
-    gemini_key:      $('key-gemini').value.trim(),
-    grok_key:        $('key-grok').value.trim(),
-    system_prompt:   $('ai-prompt').value.trim(),
-    [modelField]:    $('ai-model-display').value.trim(),
+    provider:          p,
+    anthropic_key:     $('key-anthropic').value.trim(),
+    openai_key:        $('key-openai').value.trim(),
+    gemini_key:        $('key-gemini').value.trim(),
+    grok_key:          $('key-grok').value.trim(),
+    system_prompt:     $('ai-prompt').value.trim(),
+    // Salva modelos de todos os provedores para não perder ao trocar
+    anthropic_model:   _aiSettings.anthropic_model || _PROVIDER_MODELS.anthropic,
+    openai_model:      _aiSettings.openai_model    || _PROVIDER_MODELS.openai,
+    gemini_model:      _aiSettings.gemini_model    || _PROVIDER_MODELS.gemini,
+    grok_model:        _aiSettings.grok_model      || _PROVIDER_MODELS.grok,
+    [modelField]:      $('ai-model-display').value.trim(),
   };
   const res = await api('POST', '/api/settings/ai', payload);
   if (res && res.ok) {
     _aiSettings = {..._aiSettings, ...payload};
-    $('info-ai').textContent = ({anthropic:'Claude (Anthropic)', openai:'GPT (OpenAI)', gemini:'Gemini (Google)', grok:'Grok (xAI)'})[p] || p;
+    const providerNames = {anthropic:'Claude (Anthropic)', openai:'GPT (OpenAI)', gemini:'Gemini (Google)', grok:'Grok (xAI)'};
+    $('info-ai').textContent = providerNames[p] || p;
     const st = $('ai-save-status');
     st.style.display = 'inline-flex';
     setTimeout(() => st.style.display = 'none', 3000);
-    toast('✅ Configurações de IA salvas!');
+    toast('✅ Configurações de IA salvas! Provedor: ' + (providerNames[p] || p));
   } else {
     toast('❌ Erro ao salvar. Verifique o console.');
   }
@@ -1409,25 +1425,56 @@ function toggleKey(icon, inputId) {
 async function refreshQR() {
   const box = $('qr-img');
   box.innerHTML = '<div class="spinner"></div>';
-  const data = await api('GET', '/api/qrcode');
-  if (!data) return;
-  if (data.qrcode) {
-    renderQR(data.qrcode);
-  } else if (data.error) {
-    box.innerHTML = `<span style="color:var(--gray);font-size:.8rem;text-align:center;padding:16px">${data.error}</span>`;
-  }
-  // Status
+
+  // Verifica status primeiro
   const status = await api('GET', '/api/connection/status');
   if (status) {
     const state = (status.instance||{}).state || 'unknown';
     updateConnStatus(state);
+    if (state === 'open') {
+      box.innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;gap:10px;padding:20px">
+        <i class="fa fa-check-circle" style="font-size:3rem;color:var(--green)"></i>
+        <span style="font-size:.9rem;color:var(--green);font-weight:600">WhatsApp Conectado!</span>
+      </div>`;
+      return;
+    }
+  }
+
+  // Busca QR code
+  const data = await api('GET', '/api/qrcode');
+  if (!data) return;
+  if (data.qrcode) {
+    renderQR(data.qrcode);
+  } else {
+    box.innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;gap:10px;padding:20px">
+      <i class="fa fa-qrcode" style="font-size:2.5rem;color:var(--gray)"></i>
+      <span style="font-size:.78rem;color:var(--gray);text-align:center">
+        ${data.error || 'Clique em "Reconectar" para gerar o QR Code'}
+      </span>
+    </div>`;
+  }
+}
+
+async function reconnectWhatsApp() {
+  const box = $('qr-img');
+  box.innerHTML = '<div class="spinner"></div>';
+  $('conn-label').textContent = 'Reconectando…';
+  const res = await api('POST', '/api/settings/evolution/reconnect');
+  if (res && res.ok) {
+    toast('Reconexão iniciada — aguarde o QR Code…');
+    setTimeout(refreshQR, 2500);
+  } else {
+    toast('❌ ' + ((res && res.error) || 'Falha ao reconectar'));
+    refreshQR();
   }
 }
 
 function renderQR(b64) {
   const box = $('qr-img');
   if (!b64) return;
-  box.innerHTML = `<img src="${b64}" alt="QR Code"/>`;
+  // Garante prefixo data:image
+  const src = b64.startsWith('data:') ? b64 : `data:image/png;base64,${b64}`;
+  box.innerHTML = `<img src="${src}" alt="QR Code" style="width:100%;height:100%;border-radius:10px;object-fit:contain"/>`;
 }
 
 function updateConnStatus(state) {
