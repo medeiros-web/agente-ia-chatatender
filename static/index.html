@@ -23,8 +23,40 @@
   --white:#fff;--gray:#667781;--gray-light:#e9edef;
   --red:#ef4444;--orange:#f97316;--blue:#3b82f6;--purple:#8b5cf6;
   --text:#111827;--border:#e5e7eb;--radius:12px;
+  --input-bg:#fff;--card-bg:#fff;--msg-in-bg:#fff;
+  --msg-out-bg:#d9fdd3;--shadow:0 1px 4px rgba(0,0,0,.08);
 }
-body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--text);height:100vh;overflow:hidden}
+/* ── TEMA ESCURO ── */
+[data-theme="dark"]{
+  --bg:#0b141a;--sidebar:#1f2937;--sidebar-hover:#374151;
+  --white:#1f2937;--gray:#8696a0;--gray-light:#2a3942;
+  --text:#e9edef;--border:#2a3942;
+  --input-bg:#2a3942;--card-bg:#1f2937;
+  --msg-in-bg:#202c33;--msg-out-bg:#005c4b;
+  --green-light:#005c4b;
+  --shadow:0 1px 4px rgba(0,0,0,.3);
+}
+[data-theme="dark"] body{background:var(--bg)}
+[data-theme="dark"] .login-card{background:#1f2937;color:var(--text)}
+[data-theme="dark"] .login-card input{background:var(--input-bg);color:var(--text);border-color:var(--border)}
+[data-theme="dark"] select{background:var(--input-bg)!important;color:var(--text)!important;border-color:var(--border)!important}
+[data-theme="dark"] input[type="text"],[data-theme="dark"] input[type="password"],[data-theme="dark"] input[type="email"],[data-theme="dark"] input[type="url"],[data-theme="dark"] textarea{background:var(--input-bg)!important;color:var(--text)!important;border-color:var(--border)!important}
+[data-theme="dark"] .settings-card{background:var(--card-bg)}
+[data-theme="dark"] .stat-card{background:var(--card-bg)}
+[data-theme="dark"] .kanban-card{background:var(--card-bg);color:var(--text)}
+[data-theme="dark"] .ticket-item:hover{background:#2a3942}
+[data-theme="dark"] .ticket-item.active{background:#182229}
+[data-theme="dark"] .msg-in{background:var(--msg-in-bg)}
+[data-theme="dark"] .msg-out{background:var(--msg-out-bg);color:#e9edef}
+[data-theme="dark"] .search-box{background:var(--gray-light)}
+[data-theme="dark"] .search-box input{color:var(--text)}
+[data-theme="dark"] #chat-input-area{background:var(--white)}
+[data-theme="dark"] #msg-input{background:var(--input-bg);color:var(--text);border-color:var(--border)}
+[data-theme="dark"] #chat-header,[data-theme="dark"] #ticket-panel,[data-theme="dark"] #chat-area>div:first-child{background:var(--white)}
+[data-theme="dark"] .human-panel-inner{background:var(--white)}
+[data-theme="dark"] #bottom-nav{background:var(--sidebar)}
+[data-theme="dark"] .ai-save-check{color:var(--green)}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--text);height:100vh;overflow:hidden;transition:background .2s,color .2s}
 
 /* ── LOGIN ── */
 #login-page{display:flex;align-items:center;justify-content:center;height:100vh;background:linear-gradient(135deg,#00a884,#008069)}
@@ -42,13 +74,17 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
 #app{display:none;height:100vh;flex-direction:row}
 
 /* Sidebar */
-#sidebar{width:64px;background:var(--sidebar);display:flex;flex-direction:column;align-items:center;padding:16px 0;gap:6px;flex-shrink:0;transition:.3s}
-.sidebar-logo{color:#fff;font-size:1.5rem;margin-bottom:10px;padding:8px}
-.nav-btn{width:44px;height:44px;border-radius:10px;border:none;background:transparent;color:#9ca3af;font-size:1.1rem;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:.2s;position:relative}
+#sidebar{width:200px;background:var(--sidebar);display:flex;flex-direction:column;padding:16px 8px;gap:4px;flex-shrink:0;transition:.3s}
+.sidebar-logo{color:#fff;font-size:1.1rem;font-weight:800;margin-bottom:12px;padding:8px 12px;display:flex;align-items:center;gap:10px;letter-spacing:-.01em}
+.sidebar-logo span{font-size:.75rem;color:#9ca3af;font-weight:500;letter-spacing:0}
+.nav-btn{width:100%;height:42px;border-radius:10px;border:none;background:transparent;color:#9ca3af;font-size:.88rem;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:12px;padding:0 12px;transition:.2s;position:relative;text-align:left}
+.nav-btn i{width:18px;text-align:center;flex-shrink:0;font-size:1rem}
+.nav-btn .nav-label{flex:1;white-space:nowrap}
 .nav-btn:hover,.nav-btn.active{background:var(--sidebar-hover);color:#fff}
-.nav-btn .badge{position:absolute;top:4px;right:4px;background:var(--red);color:#fff;font-size:.6rem;padding:1px 4px;border-radius:99px;min-width:16px;text-align:center}
-.sidebar-bottom{margin-top:auto;display:flex;flex-direction:column;gap:6px;align-items:center}
-.status-dot{width:10px;height:10px;border-radius:50%;background:#ef4444;margin:4px auto}
+.nav-btn .badge{position:absolute;top:8px;right:10px;background:var(--red);color:#fff;font-size:.6rem;padding:1px 4px;border-radius:99px;min-width:16px;text-align:center}
+.sidebar-bottom{margin-top:auto;display:flex;flex-direction:column;gap:4px}
+.sidebar-status-row{display:flex;align-items:center;gap:8px;padding:8px 12px;font-size:.75rem;color:#6b7280}
+.status-dot{width:8px;height:8px;border-radius:50%;background:#ef4444;flex-shrink:0}
 .status-dot.connected{background:var(--green)}
 
 /* Conteúdo */
@@ -289,27 +325,40 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
 
   <!-- SIDEBAR -->
   <div id="sidebar">
-    <div class="sidebar-logo">💬</div>
+    <div class="sidebar-logo">💬 <span style="font-size:.95rem;color:#fff;font-weight:700">ChatAtender</span></div>
     <button class="nav-btn active" id="nav-tickets" onclick="showView('tickets')" title="Atendimentos">
       <i class="fa fa-comments"></i>
+      <span class="nav-label">Atendimentos</span>
       <span class="badge hidden" id="badge-tickets">0</span>
     </button>
     <button class="nav-btn" id="nav-kanban" onclick="showView('kanban')" title="Kanban">
       <i class="fa fa-columns"></i>
+      <span class="nav-label">Kanban</span>
     </button>
     <button class="nav-btn" id="nav-dashboard" onclick="showView('dashboard')" title="Dashboard">
       <i class="fa fa-chart-bar"></i>
+      <span class="nav-label">Dashboard</span>
     </button>
     <button class="nav-btn" id="nav-contacts" onclick="showView('contacts')" title="Contatos">
       <i class="fa fa-users"></i>
+      <span class="nav-label">Contatos</span>
     </button>
     <div class="sidebar-bottom">
       <button class="nav-btn" id="nav-settings" onclick="showView('settings')" title="Configurações / QR Code">
-        <i class="fa fa-qrcode"></i>
+        <i class="fa fa-cog"></i>
+        <span class="nav-label">Configurações</span>
       </button>
-      <div class="status-dot" id="status-dot" title="Status conexão WhatsApp"></div>
-      <button class="nav-btn" onclick="doLogout()" title="Sair">
+      <div class="sidebar-status-row">
+        <div class="status-dot" id="status-dot" title="Status conexão WhatsApp"></div>
+        <span id="status-label-sidebar">Desconectado</span>
+      </div>
+      <button class="nav-btn" id="theme-toggle-btn" onclick="toggleTheme()" title="Alternar tema">
+        <i class="fa fa-moon" id="theme-icon"></i>
+        <span class="nav-label" id="theme-label">Tema Escuro</span>
+      </button>
+      <button class="nav-btn" onclick="doLogout()" title="Sair" style="color:#ef4444">
         <i class="fa fa-sign-out-alt"></i>
+        <span class="nav-label">Sair</span>
       </button>
     </div>
   </div>
@@ -330,7 +379,10 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
       <i class="fa fa-users"></i><span>Contatos</span>
     </button>
     <button class="bn-btn" id="bn-settings" onclick="showView('settings')">
-      <i class="fa fa-qrcode"></i><span>Config</span>
+      <i class="fa fa-cog"></i><span>Config</span>
+    </button>
+    <button class="bn-btn" onclick="toggleTheme()" title="Tema">
+      <i class="fa fa-moon" id="theme-icon-mobile"></i><span id="theme-label-mobile">Tema</span>
     </button>
   </nav>
 
@@ -807,6 +859,34 @@ function doLogout() {
   api('POST', '/api/auth/logout');
   showLogin();
 }
+
+// ═══════════════════════════════════════════════════════
+//  TEMA CLARO / ESCURO
+// ═══════════════════════════════════════════════════════
+function _applyTheme(dark) {
+  document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+  const icon  = $('theme-icon');
+  const label = $('theme-label');
+  const iconM = $('theme-icon-mobile');
+  const lblM  = $('theme-label-mobile');
+  if (icon)  icon.className  = dark ? 'fa fa-sun' : 'fa fa-moon';
+  if (label) label.textContent = dark ? 'Tema Claro' : 'Tema Escuro';
+  if (iconM) iconM.className  = dark ? 'fa fa-sun' : 'fa fa-moon';
+  if (lblM)  lblM.textContent  = dark ? 'Claro' : 'Escuro';
+  localStorage.setItem('chatatender_theme', dark ? 'dark' : 'light');
+}
+
+function toggleTheme() {
+  const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+  _applyTheme(!isDark);
+}
+
+// Aplica tema salvo ao carregar
+(function() {
+  const saved = localStorage.getItem('chatatender_theme');
+  const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+  _applyTheme(saved ? saved === 'dark' : prefersDark);
+})();
 
 function showLogin() {
   $('login-page').style.display = 'flex';
@@ -1478,18 +1558,20 @@ function renderQR(b64) {
 }
 
 function updateConnStatus(state) {
-  const dot = $('conn-dot');
-  const lbl = $('conn-label');
+  const dot  = $('conn-dot');
+  const lbl  = $('conn-label');
   const sdot = $('status-dot');
+  const slbl = $('status-label-sidebar');
   const map = {
-    open:       {color:'#00a884', label:'Conectado', connected:true},
+    open:       {color:'#00a884', label:'Conectado ✓', connected:true},
     connecting: {color:'#f97316', label:'Conectando…', connected:false},
     close:      {color:'#ef4444', label:'Desconectado', connected:false},
-    qr:         {color:'#f97316', label:'Aguardando QR Code', connected:false},
+    qr:         {color:'#f97316', label:'Aguardando QR', connected:false},
   };
   const s = map[state] || {color:'#9ca3af', label:state, connected:false};
-  if (dot) { dot.style.background = s.color; }
-  if (lbl) lbl.textContent = s.label;
+  if (dot)  { dot.style.background = s.color; }
+  if (lbl)  lbl.textContent = s.label;
+  if (slbl) slbl.textContent = s.label;
   if (sdot) {
     sdot.style.background = s.color;
     sdot.className = 'status-dot' + (s.connected ? ' connected' : '');
