@@ -102,7 +102,7 @@ def _qr_poller():
             state = (status.get("instance") or {}).get("state", "unknown")
             socketio.emit("connection_status", {"state": state}, namespace="/")
 
-            if state in ("connecting", "close", "qr", "unknown"):
+            if state in ("connecting", "qr"):
                 qr_b64 = evo.get_qr_code()
                 if qr_b64 and qr_b64 != last_qr:
                     last_qr = qr_b64

@@ -22,7 +22,7 @@ log = logging.getLogger(__name__)
 _evo_url:      str = ""
 _evo_key:      str = ""
 _evo_instance: str = ""
-_evo_version:  str = "evolution-go"
+_evo_version:  str = "evolution-api"
 _inst_token:   str = ""   # Evolution GO: token da instância (pode diferir do INSTANCE_NAME)
 
 
@@ -36,14 +36,14 @@ def reload_settings() -> None:
         _evo_url      = models.get_setting("evo_url",      config.EVOLUTION_URL).rstrip("/")
         _evo_key      = models.get_setting("evo_key",      config.EVOLUTION_KEY)
         _evo_instance = models.get_setting("evo_instance", config.INSTANCE_NAME)
-        _evo_version  = models.get_setting("evo_version",  "evolution-go")
+        _evo_version  = models.get_setting("evo_version",  "evolution-api")
         log.debug("evo reload: url=%s inst=%s ver=%s", _evo_url, _evo_instance, _evo_version)
     except Exception as e:
         log.debug("reload_settings: usando env vars (%s)", e)
         _evo_url      = config.EVOLUTION_URL.rstrip("/")
         _evo_key      = config.EVOLUTION_KEY
         _evo_instance = config.INSTANCE_NAME
-        _evo_version  = "evolution-go"
+        _evo_version  = "evolution-api"
 
 
 def _url() -> str:
@@ -56,7 +56,7 @@ def _inst() -> str:
     return _evo_instance or config.INSTANCE_NAME
 
 def _ver() -> str:
-    return _evo_version or "evolution-go"
+    return _evo_version or "evolution-api"
 
 def _is_go() -> bool:
     return _ver() == "evolution-go"
@@ -182,9 +182,10 @@ def connect_instance() -> dict:
     """Inicia/reinicia sessão para gerar novo QR code."""
     try:
         if _is_go():
-            r = _req("POST", "/instance/connect", {
-                "webhookUrl": "", "subscribe": ["MESSAGE", "CONNECTION"],
-            }, retries=False, timeout=12)
+            payload: dict = {"subscribe": ["MESSAGE", "CONNECTION"]}
+            if config.WEBHOOK_PUBLIC_URL:
+                payload["webhookUrl"] = f"{config.WEBHOOK_PUBLIC_URL}/webhook"
+            r = _req("POST", "/instance/connect", payload, retries=False, timeout=12)
         else:
             # Faz logout para forçar novo QR
             try:

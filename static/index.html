@@ -1583,19 +1583,28 @@ async function refreshQR() {
 
   // Verifica status primeiro
   const status = await api('GET', '/api/connection/status');
-  if (status) {
-    const state = (status.instance||{}).state || 'unknown';
-    updateConnStatus(state);
-    if (state === 'open') {
-      box.innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;gap:10px;padding:20px">
-        <i class="fa fa-check-circle" style="font-size:3rem;color:var(--green)"></i>
-        <span style="font-size:.9rem;color:var(--green);font-weight:600">WhatsApp Conectado!</span>
-      </div>`;
-      return;
-    }
+  const state = status ? ((status.instance||{}).state || 'unknown') : 'unknown';
+  updateConnStatus(state);
+
+  if (state === 'open') {
+    box.innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;gap:10px;padding:20px">
+      <i class="fa fa-check-circle" style="font-size:3rem;color:var(--green)"></i>
+      <span style="font-size:.9rem;color:var(--green);font-weight:600">WhatsApp Conectado!</span>
+    </div>`;
+    return;
   }
 
-  // Busca QR code
+  if (state === 'close') {
+    box.innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;gap:10px;padding:20px">
+      <i class="fa fa-unlink" style="font-size:2.5rem;color:#ef4444"></i>
+      <span style="font-size:.78rem;color:var(--gray);text-align:center">
+        Instância desconectada.<br>Clique em <b>Reconectar</b> para gerar o QR Code.
+      </span>
+    </div>`;
+    return;
+  }
+
+  // Busca QR code (somente se estado for qr / connecting / unknown)
   const data = await api('GET', '/api/qrcode');
   if (!data) return;
   if (data.qrcode) {
@@ -1604,7 +1613,7 @@ async function refreshQR() {
     box.innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;gap:10px;padding:20px">
       <i class="fa fa-qrcode" style="font-size:2.5rem;color:var(--gray)"></i>
       <span style="font-size:.78rem;color:var(--gray);text-align:center">
-        ${data.error || 'Clique em "Reconectar" para gerar o QR Code'}
+        ${data.error || 'QR Code não disponível — clique em "Reconectar"'}
       </span>
     </div>`;
   }
@@ -1617,7 +1626,7 @@ async function reconnectWhatsApp() {
   const res = await api('POST', '/api/settings/evolution/reconnect');
   if (res && res.ok) {
     toast('Reconexão iniciada — aguarde o QR Code…');
-    setTimeout(refreshQR, 2500);
+    setTimeout(refreshQR, 4000);
   } else {
     toast('❌ ' + ((res && res.error) || 'Falha ao reconectar'));
     refreshQR();
@@ -1638,12 +1647,13 @@ function updateConnStatus(state) {
   const sdot = $('status-dot');
   const slbl = $('status-label-sidebar');
   const map = {
-    open:       {color:'#00a884', label:'Conectado ✓', connected:true},
-    connecting: {color:'#f97316', label:'Conectando…', connected:false},
-    close:      {color:'#ef4444', label:'Desconectado', connected:false},
+    open:       {color:'#00a884', label:'Conectado ✓',   connected:true},
+    connecting: {color:'#f97316', label:'Conectando…',   connected:false},
+    close:      {color:'#ef4444', label:'Desconectado',  connected:false},
     qr:         {color:'#f97316', label:'Aguardando QR', connected:false},
+    unknown:    {color:'#9ca3af', label:'Verificando…',  connected:false},
   };
-  const s = map[state] || {color:'#9ca3af', label:state, connected:false};
+  const s = map[state] || {color:'#9ca3af', label:'Sem resposta', connected:false};
   if (dot)  { dot.style.background = s.color; }
   if (lbl)  lbl.textContent = s.label;
   if (slbl) slbl.textContent = s.label;
