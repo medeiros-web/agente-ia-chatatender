@@ -1,15 +1,14 @@
 """
-Cliente Evolution GO API — envio de mensagens, indicador de digitação,
-download de mídia, registro de webhook.
+Cliente dual-mode: Evolution GO (Go) e Evolution API v1/v2 (TypeScript).
 
-Modelo de autenticação Evolution GO:
-  - Operações globais (/instance/all, /instance/create): apikey = GLOBAL_API_KEY
-  - Operações de instância (/send/text, /instance/status, etc.): apikey = INSTANCE_TOKEN
-    onde INSTANCE_TOKEN é o campo "token" criado junto com a instância
-    (por padrão, definimos token = INSTANCE_NAME na criação)
+Evolution GO endpoints  → /instance/status, /instance/qr, /send/text, etc.
+Evolution API endpoints → /instance/connectionState/{i}, /message/sendText/{i}, etc.
+
+A versão ativa é lida do banco (evo_version) e pode ser "evolution-go" ou "evolution-api".
 """
 import json
 import time
+import base64
 import logging
 import urllib.request
 import urllib.error
@@ -19,58 +18,57 @@ import config
 
 log = logging.getLogger(__name__)
 
-# Configuração dinâmica (pode ser sobrescrita por reload_settings)
-_instance_token: str = ""
-_evo_url: str = ""
-_evo_key: str = ""
+# ── Estado dinâmico (sobrescrito por reload_settings) ──────────────────────────
+_evo_url:      str = ""
+_evo_key:      str = ""
 _evo_instance: str = ""
-_evo_version: str = "evolution-go"  # "evolution-go" ou "evolution-api"
+_evo_version:  str = "evolution-go"
+_inst_token:   str = ""   # Evolution GO: token da instância (pode diferir do INSTANCE_NAME)
 
+
+# ── Helpers de estado ──────────────────────────────────────────────────────────
 
 def reload_settings() -> None:
-    """Recarrega URL/key/instance do banco de dados (se disponível)."""
-    global _evo_url, _evo_key, _evo_instance, _evo_version, _instance_token
+    """Lê configurações do banco de dados e atualiza o estado local."""
+    global _evo_url, _evo_key, _evo_instance, _evo_version, _inst_token
     try:
         import models
         _evo_url      = models.get_setting("evo_url",      config.EVOLUTION_URL).rstrip("/")
         _evo_key      = models.get_setting("evo_key",      config.EVOLUTION_KEY)
         _evo_instance = models.get_setting("evo_instance", config.INSTANCE_NAME)
         _evo_version  = models.get_setting("evo_version",  "evolution-go")
-        log.debug("Evolution settings recarregadas: url=%s instance=%s version=%s", _evo_url, _evo_instance, _evo_version)
+        log.debug("evo reload: url=%s inst=%s ver=%s", _evo_url, _evo_instance, _evo_version)
     except Exception as e:
-        log.debug("reload_settings falhou, usando config.py: %s", e)
+        log.debug("reload_settings: usando env vars (%s)", e)
         _evo_url      = config.EVOLUTION_URL.rstrip("/")
         _evo_key      = config.EVOLUTION_KEY
         _evo_instance = config.INSTANCE_NAME
+        _evo_version  = "evolution-go"
 
 
-def _get_url() -> str:
+def _url() -> str:
     return _evo_url or config.EVOLUTION_URL.rstrip("/")
 
-
-def _get_key() -> str:
+def _key() -> str:
     return _evo_key or config.EVOLUTION_KEY
 
-
-def _get_instance() -> str:
+def _inst() -> str:
     return _evo_instance or config.INSTANCE_NAME
 
-
-def _get_version() -> str:
+def _ver() -> str:
     return _evo_version or "evolution-go"
 
+def _is_go() -> bool:
+    return _ver() == "evolution-go"
 
-def _get_token() -> str:
-    """Retorna o token da instância para uso como apikey."""
-    return _instance_token or _get_instance()
-
-
-def _set_token(token: str) -> None:
-    global _instance_token
-    _instance_token = token
+def _token() -> str:
+    """Evolution GO usa token da instância como apikey para ops de instância."""
+    return _inst_token or _inst()
 
 
-def _request(
+# ── HTTP request helper ────────────────────────────────────────────────────────
+
+def _req(
     method: str,
     path: str,
     payload: dict | None = None,
@@ -79,113 +77,214 @@ def _request(
     retries: bool = True,
 ) -> dict:
     """
-    Executa requisição HTTP contra a Evolution API.
-    global_auth=True usa a chave global; False usa token da instância (Evolution GO)
-    ou a chave global (Evolution API v1/v2 usa sempre a mesma key).
+    Executa requisição.
+    Evolution GO:  ops globais usam _key(), ops de instância usam _token().
+    Evolution API: sempre usa _key().
     """
-    url = f"{_get_url()}{path}"
-    if _get_version() == "evolution-go":
-        api_key = _get_key() if global_auth else _get_token()
-    else:
-        api_key = _get_key()
-    headers = {
-        "apikey": api_key,
-        "Content-Type": "application/json",
-    }
+    url     = f"{_url()}{path}"
+    api_key = _key() if (global_auth or not _is_go()) else _token()
+    headers = {"apikey": api_key, "Content-Type": "application/json"}
+    body    = json.dumps(payload).encode() if payload is not None else None
 
-    body = json.dumps(payload).encode() if payload is not None else None
-    max_attempts = config.MAX_RETRIES if retries else 1
+    attempts = config.MAX_RETRIES if retries else 1
     last_err: Exception | None = None
 
-    for attempt in range(1, max_attempts + 1):
+    for attempt in range(1, attempts + 1):
         req = urllib.request.Request(url, data=body, headers=headers, method=method)
         try:
             with urllib.request.urlopen(req, timeout=timeout) as r:
                 raw = r.read()
                 return json.loads(raw) if raw else {}
         except urllib.error.HTTPError as e:
-            body_err = e.read().decode(errors="replace")[:300]
-            log.warning("HTTP %s para %s (tentativa %d/%d): %s", e.code, path, attempt, max_attempts, body_err)
+            err_body = e.read().decode(errors="replace")[:300]
+            log.warning("HTTP %s %s (t=%d/%d): %s", e.code, path, attempt, attempts, err_body)
             if e.code < 500:
                 raise
             last_err = e
         except (urllib.error.URLError, TimeoutError, OSError) as e:
-            log.warning("Erro de rede para %s (tentativa %d/%d): %s", path, attempt, max_attempts, e)
+            log.warning("Net error %s (t=%d/%d): %s", path, attempt, attempts, e)
             last_err = e
-
-        if attempt < max_attempts:
+        if attempt < attempts:
             time.sleep(config.RETRY_DELAY * attempt)
 
-    raise RuntimeError(f"Falha após {max_attempts} tentativas para {path}: {last_err}")
+    raise RuntimeError(f"Falha após {attempts} tentativas para {path}: {last_err}")
 
 
-# ── Mensagem de texto ─────────────────────────────────────────────────────────
+def _extract(result: dict, *keys) -> str:
+    """Extrai o primeiro valor não-vazio de uma lista de chaves aninhadas."""
+    data = result.get("data", result)
+    for k in keys:
+        v = data.get(k) or result.get(k)
+        if v:
+            return str(v)
+    return ""
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  STATUS DA INSTÂNCIA
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def get_instance_status() -> dict:
+    """Retorna {'instance': {'state': 'open'|'qr'|'close'|'unknown'}}."""
+    try:
+        if _is_go():
+            # Evolution GO: GET /instance/status
+            r    = _req("GET", "/instance/status", timeout=6, retries=False)
+            data = r.get("data", r)
+            connected = data.get("Connected", data.get("connected", False))
+            logged_in = data.get("LoggedIn",  data.get("loggedIn",  False))
+            state = "open" if (connected and logged_in) else ("qr" if connected else "close")
+        else:
+            # Evolution API: GET /instance/connectionState/{instance}
+            r    = _req("GET", f"/instance/connectionState/{_inst()}", timeout=6, retries=False)
+            raw  = r.get("instance", r.get("state", r))
+            if isinstance(raw, dict):
+                s = raw.get("state", "close")
+            else:
+                s = str(raw)
+            state = "open" if s in ("open", "connected") else ("qr" if s in ("qr", "connecting") else "close")
+        return {"instance": {"state": state}, "raw": r}
+    except Exception as e:
+        log.debug("get_instance_status: %s", e)
+        return {"instance": {"state": "unknown"}, "error": str(e)}
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  QR CODE
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def get_qr_code() -> str:
+    """Retorna QR code como data:image/png;base64,... ou string vazia."""
+    try:
+        if _is_go():
+            # Evolution GO: GET /instance/qr
+            r = _req("GET", "/instance/qr", timeout=12, retries=False)
+        else:
+            # Evolution API: GET /instance/connect/{instance}
+            r = _req("GET", f"/instance/connect/{_inst()}", timeout=12, retries=False)
+
+        data = r.get("data", r)
+        qr = (
+            data.get("Qrcode") or data.get("qrcode") or
+            data.get("base64") or data.get("QrCode") or
+            data.get("code")   or r.get("qrcode")    or
+            r.get("base64")    or r.get("code")       or ""
+        )
+        if qr and not qr.startswith("data:"):
+            qr = f"data:image/png;base64,{qr}"
+        return qr
+    except Exception as e:
+        log.debug("get_qr_code: %s", e)
+        return ""
+
+
+def connect_instance() -> dict:
+    """Inicia/reinicia sessão para gerar novo QR code."""
+    try:
+        if _is_go():
+            r = _req("POST", "/instance/connect", {
+                "webhookUrl": "", "subscribe": ["MESSAGE", "CONNECTION"],
+            }, retries=False, timeout=12)
+        else:
+            # Faz logout para forçar novo QR
+            try:
+                _req("DELETE", f"/instance/logout/{_inst()}", retries=False, timeout=8)
+            except Exception:
+                pass
+            r = _req("GET", f"/instance/connect/{_inst()}", retries=False, timeout=12)
+        return {"ok": True, "data": r}
+    except Exception as e:
+        log.warning("connect_instance: %s", e)
+        return {"ok": False, "error": str(e)[:200]}
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  ENVIO DE MENSAGEM
+# ═══════════════════════════════════════════════════════════════════════════════
 
 def send_text(phone: str, text: str) -> bool:
-    """Envia mensagem de texto via Evolution GO. Retorna True em caso de sucesso."""
+    """Envia mensagem de texto. Retorna True em caso de sucesso."""
     try:
-        _request("POST", "/send/text", {"number": phone, "text": text})
+        if _is_go():
+            # Evolution GO: POST /send/text
+            _req("POST", "/send/text", {"number": phone, "text": text})
+        else:
+            # Evolution API: POST /message/sendText/{instance}
+            _req("POST", f"/message/sendText/{_inst()}", {
+                "number": phone,
+                "textMessage": {"text": text},
+            })
         log.info("✓ Mensagem enviada → %s", phone)
         return True
     except Exception as e:
-        log.error("✗ Falha ao enviar para %s: %s", phone, e)
+        log.error("✗ Falha envio → %s: %s", phone, e)
         return False
 
 
-# ── Indicador de digitação ────────────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════════════
+#  INDICADOR DE DIGITAÇÃO
+# ═══════════════════════════════════════════════════════════════════════════════
 
 def send_typing(phone: str, duration_ms: int = 2000) -> None:
-    """Envia indicador 'digitando...' por `duration_ms` milissegundos."""
     if not config.TYPING_ENABLED:
         return
     try:
-        _request("POST", "/message/presence", {
-            "number": phone,
-            "presence": "composing",
-            "delay": duration_ms,
-        }, retries=False, timeout=5)
+        if _is_go():
+            # Evolution GO: POST /message/presence
+            _req("POST", "/message/presence", {
+                "number": phone, "presence": "composing", "delay": duration_ms,
+            }, retries=False, timeout=5)
+        else:
+            # Evolution API: POST /chat/presence/{instance}
+            _req("POST", f"/chat/presence/{_inst()}", {
+                "number": phone, "options": {"presence": "composing", "delay": duration_ms},
+            }, retries=False, timeout=5)
     except Exception as e:
-        log.debug("Typing indicator falhou para %s: %s", phone, e)
+        log.debug("send_typing %s: %s", phone, e)
 
 
-# ── Download de mídia ─────────────────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════════════
+#  DOWNLOAD DE MÍDIA
+# ═══════════════════════════════════════════════════════════════════════════════
 
 def download_media(message_id: str) -> Optional[bytes]:
-    """Baixa a mídia de uma mensagem pelo ID. Retorna bytes ou None."""
+    """Baixa mídia pelo ID da mensagem. Retorna bytes ou None."""
     try:
-        result = _request("POST", "/message/downloadimage", {"messageId": message_id}, timeout=30)
-        import base64
+        if _is_go():
+            r = _req("POST", "/message/downloadimage", {"messageId": message_id}, timeout=30)
+        else:
+            r = _req("POST", f"/chat/getBase64FromMediaMessage/{_inst()}", {
+                "message": {"key": {"id": message_id}}, "convertToMp4": False,
+            }, timeout=30)
+
         b64 = (
-            result.get("data", {}).get("base64")
-            or result.get("data", {}).get("media")
-            or result.get("base64")
-            or result.get("media")
-            or ""
+            r.get("data", {}).get("base64") or r.get("data", {}).get("media") or
+            r.get("base64") or r.get("media") or ""
         )
         if b64:
             if "," in b64:
                 b64 = b64.split(",", 1)[1]
             return base64.b64decode(b64)
     except Exception as e:
-        log.warning("Falha ao baixar mídia %s: %s", message_id, e)
+        log.warning("download_media %s: %s", message_id, e)
     return None
 
 
-# ── Registro de webhook ───────────────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════════════
+#  WEBHOOK
+# ═══════════════════════════════════════════════════════════════════════════════
 
 def register_webhook(public_url: str) -> bool:
-    """Conecta instância e configura webhook."""
+    """Registra/atualiza URL de webhook na instância."""
     try:
-        ver = _get_version()
-        if ver == "evolution-go":
-            _request("POST", "/instance/connect", {
+        if _is_go():
+            _req("POST", "/instance/connect", {
                 "webhookUrl": f"{public_url}/webhook",
                 "subscribe": ["MESSAGE", "CONNECTION"],
                 "immediate": True,
             })
         else:
-            inst = _get_instance()
-            _request("POST", f"/webhook/set/{inst}", {
+            _req("POST", f"/webhook/set/{_inst()}", {
                 "url": f"{public_url}/webhook",
                 "webhook_by_events": False,
                 "webhook_base64": False,
@@ -194,141 +293,124 @@ def register_webhook(public_url: str) -> bool:
         log.info("Webhook registrado: %s/webhook", public_url)
         return True
     except Exception as e:
-        log.warning("Não foi possível registrar webhook: %s", e)
+        log.warning("register_webhook: %s", e)
         return False
 
 
-# ── Status da instância ───────────────────────────────────────────────────────
-
-def get_instance_status() -> dict:
-    """Retorna status da instância normalizado para Evolution GO ou Evolution API."""
-    try:
-        ver = _get_version()
-        if ver == "evolution-go":
-            result = _request("GET", "/instance/status", timeout=5, retries=False)
-            data = result.get("data", result)
-            connected = data.get("Connected", False)
-            logged_in = data.get("LoggedIn", False)
-            if connected and logged_in:
-                state = "open"
-            elif connected:
-                state = "qr"
-            else:
-                state = "close"
-        else:
-            # Evolution API clássica
-            inst = _get_instance()
-            result = _request("GET", f"/instance/connectionState/{inst}", timeout=5, retries=False)
-            data = result.get("instance", result)
-            state = data.get("state", "close")
-            # Normaliza estados da Evolution API
-            if state in ("open", "connected"):
-                state = "open"
-            elif state in ("connecting", "qr"):
-                state = "qr"
-            else:
-                state = "close"
-        return {"instance": {"state": state}, "raw": result}
-    except Exception as e:
-        log.debug("Falha ao obter status da instancia: %s", e)
-        return {"instance": {"state": "unknown"}, "error": str(e)}
-
-
-# ── QR Code ───────────────────────────────────────────────────────────────────
-
-def get_qr_code() -> str:
-    """Obtém QR code base64 para scan (Evolution GO ou Evolution API)."""
-    try:
-        ver = _get_version()
-        if ver == "evolution-go":
-            result = _request("GET", "/instance/qr", timeout=10, retries=False)
-        else:
-            inst = _get_instance()
-            result = _request("GET", f"/instance/connect/{inst}", timeout=10, retries=False)
-
-        # Extrai base64 de qualquer campo possível
-        data = result.get("data", result)
-        qr = (
-            data.get("Qrcode")
-            or data.get("qrcode")
-            or data.get("base64")
-            or data.get("QrCode")
-            or data.get("code")
-            or result.get("qrcode")
-            or result.get("base64")
-            or result.get("code")
-            or ""
-        )
-        # Garante que tem prefixo data:image
-        if qr and not qr.startswith("data:"):
-            qr = f"data:image/png;base64,{qr}"
-        return qr
-    except Exception as e:
-        log.debug("Falha ao obter QR code: %s", e)
-        return ""
-
-
-def connect_instance() -> dict:
-    """Força início de nova sessão / geração de QR code."""
-    try:
-        ver = _get_version()
-        if ver == "evolution-go":
-            result = _request("POST", "/instance/connect", {
-                "webhookUrl": "",
-                "subscribe": ["MESSAGE", "CONNECTION"],
-            }, retries=False, timeout=10)
-        else:
-            inst = _get_instance()
-            result = _request("DELETE", f"/instance/logout/{inst}", retries=False, timeout=8)
-        return {"ok": True, "data": result}
-    except Exception as e:
-        log.warning("connect_instance falhou: %s", e)
-        return {"ok": False, "error": str(e)[:200]}
-
-
-# ── Criação de instância ──────────────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════════════
+#  CRIAÇÃO / LISTAGEM DE INSTÂNCIA
+# ═══════════════════════════════════════════════════════════════════════════════
 
 def create_instance() -> dict:
-    """Cria a instância no Evolution GO/API se não existir."""
-    inst_name = _get_instance()
-    ver = _get_version()
+    """Cria a instância se não existir. Retorna {ok, exists, token}."""
+    global _inst_token
+    inst_name = _inst()
+
+    # Verifica se já existe
     try:
-        if ver == "evolution-go":
-            instances = _request("GET", "/instance/all", global_auth=True)
-            for inst in instances.get("data", []):
-                if inst.get("name") == inst_name:
-                    token = inst.get("token", inst_name)
-                    _set_token(token)
-                    return {"ok": True, "exists": True, "id": inst.get("id"), "token": token}
+        if _is_go():
+            r = _req("GET", "/instance/all", global_auth=True)
+            for i in r.get("data", []):
+                if i.get("name") == inst_name:
+                    tok = i.get("token", inst_name)
+                    _inst_token = tok
+                    return {"ok": True, "exists": True, "token": tok}
         else:
-            # Evolution API: verifica se instância existe via fetchInstances
-            try:
-                instances = _request("GET", "/instance/fetchInstances", global_auth=True)
-                for inst in (instances if isinstance(instances, list) else []):
-                    if inst.get("instance", {}).get("instanceName") == inst_name:
-                        return {"ok": True, "exists": True}
-            except Exception:
-                pass
+            r = _req("GET", "/instance/fetchInstances", global_auth=True)
+            lst = r if isinstance(r, list) else r.get("data", [])
+            for i in lst:
+                iname = i.get("instance", {}).get("instanceName") or i.get("instanceName", "")
+                if iname == inst_name:
+                    return {"ok": True, "exists": True}
     except Exception:
         pass
 
+    # Cria
     try:
-        if ver == "evolution-go":
-            result = _request("POST", "/instance/create", {
-                "name": inst_name,
-                "token": inst_name,
-            }, global_auth=True)
+        if _is_go():
+            r    = _req("POST", "/instance/create", {"name": inst_name, "token": inst_name}, global_auth=True)
+            data = r.get("data", r)
+            tok  = data.get("token", inst_name)
+            _inst_token = tok
+            return {"ok": True, "exists": False, "token": tok, "data": data}
         else:
-            result = _request("POST", "/instance/create", {
-                "instanceName": inst_name,
-                "token": inst_name,
-                "qrcode": True,
+            r    = _req("POST", "/instance/create", {
+                "instanceName": inst_name, "token": inst_name,
+                "qrcode": True, "integration": "WHATSAPP-BAILEYS",
             }, global_auth=True)
-        data = result.get("data", result)
-        token = data.get("token", inst_name)
-        _set_token(token)
-        return {"ok": True, "exists": False, "data": data, "token": token}
+            data = r.get("data", r)
+            return {"ok": True, "exists": False, "data": data}
     except urllib.error.HTTPError as e:
-        return {"ok": False, "error": e.read().decode()[:300]}
+        return {"ok": False, "error": e.read().decode(errors="replace")[:300]}
     except Exception as e:
         return {"ok": False, "error": str(e)[:200]}
+
+
+def list_instances() -> list[dict]:
+    """Lista todas as instâncias disponíveis."""
+    try:
+        if _is_go():
+            r = _req("GET", "/instance/all", global_auth=True)
+            return r.get("data", [])
+        else:
+            r = _req("GET", "/instance/fetchInstances", global_auth=True)
+            lst = r if isinstance(r, list) else r.get("data", [])
+            return [
+                {"name": i.get("instance", {}).get("instanceName") or i.get("instanceName"),
+                 "state": i.get("instance", {}).get("connectionStatus") or i.get("connectionStatus")}
+                for i in lst
+            ]
+    except Exception as e:
+        log.warning("list_instances: %s", e)
+        return []
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  CONTATOS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def fetch_contacts() -> list[dict]:
+    """Busca contatos da instância WhatsApp. Retorna [{phone, name}]."""
+    try:
+        if _is_go():
+            r    = _req("GET", "/contacts/all", timeout=25, retries=False)
+            items = r.get("data", r) if isinstance(r.get("data", r), list) else []
+        else:
+            r    = _req("POST", f"/chat/findContacts/{_inst()}", payload={}, timeout=25, retries=False)
+            items = r if isinstance(r, list) else r.get("data", [])
+
+        contacts = []
+        for item in items:
+            phone = str(
+                item.get("id") or item.get("phone") or item.get("Phone") or
+                item.get("jid") or item.get("remoteJid") or ""
+            ).replace("@s.whatsapp.net", "").replace("@c.us", "").replace("+", "").strip()
+            if not phone or "@" in phone or len(phone) < 8:
+                continue
+            name = str(
+                item.get("pushName") or item.get("PushName") or item.get("name") or
+                item.get("Name") or item.get("verifiedName") or phone
+            ).strip()
+            contacts.append({"phone": phone, "name": name or phone})
+        return contacts
+    except Exception as e:
+        log.warning("fetch_contacts: %s", e)
+        return []
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  TESTE DE CONEXÃO
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def test_connection() -> dict:
+    """Testa conectividade e retorna status detalhado."""
+    status = get_instance_status()
+    state  = status.get("instance", {}).get("state", "unknown")
+    return {
+        "ok":       state != "unknown",
+        "state":    state,
+        "version":  _ver(),
+        "url":      _url(),
+        "instance": _inst(),
+        "connected": state == "open",
+    }

@@ -182,9 +182,82 @@ def authenticate_user(email: str, password: str) -> Optional[dict]:
 
 def get_users() -> list[dict]:
     conn = _db()
-    rows = conn.execute("SELECT id,name,email,role,active FROM users ORDER BY name").fetchall()
+    rows = conn.execute("SELECT id,name,email,role,active,created_at FROM users ORDER BY name").fetchall()
     conn.close()
     return [dict(r) for r in rows]
+
+
+def create_user(name: str, email: str, password: str, role: str = "agent") -> dict:
+    conn = _db()
+    try:
+        cur = conn.execute(
+            "INSERT INTO users (name,email,password_hash,role,active,created_at) VALUES(?,?,?,?,1,?)",
+            (name.strip(), email.strip().lower(), _hash_pw(password), role, _now()),
+        )
+        uid = cur.lastrowid
+        conn.commit()
+        row = conn.execute("SELECT id,name,email,role,active,created_at FROM users WHERE id=?", (uid,)).fetchone()
+        conn.close()
+        return {"ok": True, "user": dict(row)}
+    except sqlite3.IntegrityError:
+        conn.close()
+        return {"ok": False, "error": "E-mail já cadastrado"}
+
+
+def update_user(uid: int, **kwargs) -> dict:
+    allowed = {"name", "email", "role", "active"}
+    fields = {k: v for k, v in kwargs.items() if k in allowed}
+    if "password" in kwargs and kwargs["password"]:
+        fields["password_hash"] = _hash_pw(kwargs["password"])
+    if not fields:
+        return {"ok": False, "error": "Nenhum campo válido"}
+    conn = _db()
+    sets = ", ".join(f"{k}=?" for k in fields)
+    vals = list(fields.values()) + [uid]
+    conn.execute(f"UPDATE users SET {sets} WHERE id=?", vals)
+    conn.commit()
+    row = conn.execute("SELECT id,name,email,role,active,created_at FROM users WHERE id=?", (uid,)).fetchone()
+    conn.close()
+    return {"ok": True, "user": dict(row) if row else None}
+
+
+def delete_user(uid: int) -> dict:
+    conn = _db()
+    conn.execute("UPDATE users SET active=0 WHERE id=?", (uid,))
+    conn.commit()
+    conn.close()
+    return {"ok": True}
+
+
+def bulk_import_contacts(contacts: list[dict]) -> dict:
+    """Importa lista de contatos [{phone, name}]. Retorna estatísticas."""
+    now = _now()
+    inserted = 0
+    updated = 0
+    skipped = 0
+    conn = _db()
+    for c in contacts:
+        phone = str(c.get("phone", "")).strip().replace("+", "").replace(" ", "").replace("-", "")
+        name  = str(c.get("name", "")).strip() or phone
+        if not phone or len(phone) < 8:
+            skipped += 1
+            continue
+        existing = conn.execute("SELECT id, name FROM contacts WHERE phone=?", (phone,)).fetchone()
+        if existing:
+            if name and name != phone and existing["name"] == existing["id"] or existing["name"] == phone:
+                conn.execute("UPDATE contacts SET name=?, updated_at=? WHERE phone=?", (name, now, phone))
+                updated += 1
+            else:
+                skipped += 1
+        else:
+            conn.execute(
+                "INSERT INTO contacts (phone,name,created_at,updated_at) VALUES(?,?,?,?)",
+                (phone, name, now, now),
+            )
+            inserted += 1
+    conn.commit()
+    conn.close()
+    return {"ok": True, "inserted": inserted, "updated": updated, "skipped": skipped, "total": len(contacts)}
 
 
 # ── Filas ─────────────────────────────────────────────────────────────────────

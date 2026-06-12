@@ -411,6 +411,130 @@ def api_users():
     return jsonify(models.get_users())
 
 
+@app.route("/api/users", methods=["POST"])
+@login_required
+def api_user_create():
+    if session.get("user_role") != "admin":
+        return jsonify({"error": "Apenas administradores podem criar usuários"}), 403
+    body = request.get_json() or {}
+    name  = body.get("name", "").strip()
+    email = body.get("email", "").strip()
+    pwd   = body.get("password", "").strip()
+    role  = body.get("role", "agent")
+    if not name or not email or not pwd:
+        return jsonify({"error": "Nome, e-mail e senha são obrigatórios"}), 400
+    if role not in ("admin", "agent"):
+        role = "agent"
+    return jsonify(models.create_user(name, email, pwd, role))
+
+
+@app.route("/api/users/<int:uid>", methods=["PUT"])
+@login_required
+def api_user_update(uid):
+    if session.get("user_role") != "admin":
+        return jsonify({"error": "Apenas administradores"}), 403
+    body = request.get_json() or {}
+    return jsonify(models.update_user(uid, **body))
+
+
+@app.route("/api/users/<int:uid>", methods=["DELETE"])
+@login_required
+def api_user_delete(uid):
+    if session.get("user_role") != "admin":
+        return jsonify({"error": "Apenas administradores"}), 403
+    if uid == session.get("user_id"):
+        return jsonify({"error": "Não é possível desativar seu próprio usuário"}), 400
+    return jsonify(models.delete_user(uid))
+
+
+# ── Importação de Contatos ────────────────────────────────────────────────────
+@app.route("/api/contacts/import", methods=["POST"])
+@login_required
+def api_contacts_import():
+    """Importa contatos de CSV ou VCF (multipart/form-data ou JSON)."""
+    contacts = []
+    # JSON direto (lista de {phone, name})
+    if request.is_json:
+        contacts = request.get_json() or []
+    else:
+        f = request.files.get("file")
+        if not f:
+            return jsonify({"error": "Nenhum arquivo enviado"}), 400
+        content = f.read().decode("utf-8", errors="replace")
+        fname = f.filename.lower()
+        if fname.endswith(".vcf"):
+            contacts = _parse_vcf(content)
+        elif fname.endswith(".csv"):
+            contacts = _parse_csv(content)
+        else:
+            return jsonify({"error": "Formato não suportado. Use .vcf ou .csv"}), 400
+
+    if not contacts:
+        return jsonify({"error": "Nenhum contato encontrado no arquivo"}), 400
+    result = models.bulk_import_contacts(contacts)
+    return jsonify(result)
+
+
+@app.route("/api/contacts/sync-whatsapp", methods=["POST"])
+@login_required
+def api_contacts_sync():
+    """Busca contatos da instância WhatsApp e importa."""
+    evo.reload_settings()
+    contacts = evo.fetch_contacts()
+    if not contacts:
+        return jsonify({"ok": False, "error": "Nenhum contato retornado pela API. Verifique se o WhatsApp está conectado."})
+    result = models.bulk_import_contacts(contacts)
+    return jsonify(result)
+
+
+def _parse_vcf(content: str) -> list[dict]:
+    """Parseia arquivo VCard (.vcf) e extrai phone + name."""
+    contacts = []
+    current: dict = {}
+    for line in content.splitlines():
+        line = line.strip()
+        if line.upper() == "BEGIN:VCARD":
+            current = {}
+        elif line.upper().startswith("FN:") or line.upper().startswith("FN;"):
+            current["name"] = line.split(":", 1)[-1].strip()
+        elif line.upper().startswith("N:") and "name" not in current:
+            parts = line.split(":", 1)[-1].split(";")
+            name = " ".join(p for p in parts[:2] if p).strip()
+            if name:
+                current["name"] = name
+        elif "TEL" in line.upper():
+            phone = line.split(":", 1)[-1].strip()
+            phone = "".join(c for c in phone if c.isdigit() or c == "+")
+            if phone:
+                current.setdefault("phones", []).append(phone)
+        elif line.upper() == "END:VCARD":
+            for ph in current.get("phones", []):
+                contacts.append({"phone": ph, "name": current.get("name", ph)})
+    return contacts
+
+
+def _parse_csv(content: str) -> list[dict]:
+    """Parseia CSV simples: phone,name ou name,phone."""
+    import csv, io
+    contacts = []
+    reader = csv.DictReader(io.StringIO(content))
+    fields = [f.lower().strip() for f in (reader.fieldnames or [])]
+    phone_col = next((f for f in fields if "phone" in f or "tel" in f or "fone" in f or "numero" in f), None)
+    name_col  = next((f for f in fields if "name" in f or "nome" in f), None)
+    # Fallback: primeira coluna = phone, segunda = name
+    raw_fields = reader.fieldnames or []
+    if not phone_col and raw_fields:
+        phone_col = raw_fields[0]
+    if not name_col and len(raw_fields) > 1:
+        name_col = raw_fields[1]
+    for row in reader:
+        phone = str(row.get(phone_col, "") if phone_col else "").strip()
+        name  = str(row.get(name_col,  "") if name_col  else "").strip()
+        if phone:
+            contacts.append({"phone": phone, "name": name or phone})
+    return contacts
+
+
 # ── QR Code ───────────────────────────────────────────────────────────────────
 @app.route("/api/qrcode")
 @login_required
@@ -509,20 +633,16 @@ def api_general_settings_save():
 @app.route("/api/settings/evolution/test")
 @login_required
 def api_evo_test():
-    url      = models.get_setting("evo_url",      config.EVOLUTION_URL)
-    key      = models.get_setting("evo_key",      config.EVOLUTION_KEY)
-    instance = models.get_setting("evo_instance", config.INSTANCE_NAME)
-    try:
-        req = urllib.request.Request(
-            f"{url}/instance/connectionState/{instance}",
-            headers={"apikey": key},
-        )
-        with urllib.request.urlopen(req, timeout=8) as r:
-            data = json.loads(r.read())
-            state = (data.get("instance") or {}).get("state", "unknown")
-            return jsonify({"connected": True, "state": state})
-    except Exception as e:
-        return jsonify({"connected": False, "error": str(e)[:120]})
+    evo.reload_settings()
+    result = evo.test_connection()
+    return jsonify(result)
+
+
+@app.route("/api/settings/evolution/instances")
+@login_required
+def api_evo_list_instances():
+    evo.reload_settings()
+    return jsonify(evo.list_instances())
 
 
 @app.route("/api/settings/evolution/create-instance", methods=["POST"])

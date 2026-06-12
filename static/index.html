@@ -721,18 +721,33 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
           </style>
         </div>
 
-        <!-- Evolution API -->
+        <!-- Evolution API / GO -->
         <div class="settings-card" style="margin-top:16px">
-          <h3><i class="fa fa-plug" style="color:var(--green)"></i> Evolution API / Evolution GO</h3>
+          <h3><i class="fa fa-plug" style="color:var(--green)"></i> Integração WhatsApp — Evolution</h3>
 
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px">
+          <!-- Seletor de versão em destaque -->
+          <div style="display:flex;gap:8px;margin-bottom:16px">
+            <button id="evo-ver-go"  onclick="setEvoVersion('evolution-go')"
+              style="flex:1;padding:10px;border-radius:10px;border:2px solid var(--border);font-size:.85rem;font-weight:700;cursor:pointer;transition:.2s">
+              ⚡ Evolution GO
+            </button>
+            <button id="evo-ver-api" onclick="setEvoVersion('evolution-api')"
+              style="flex:1;padding:10px;border-radius:10px;border:2px solid var(--border);font-size:.85rem;font-weight:700;cursor:pointer;transition:.2s">
+              🔌 Evolution API (v1/v2)
+            </button>
+          </div>
+          <input type="hidden" id="evo-version" value="evolution-go"/>
+
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px" class="evo-grid">
             <div>
-              <label style="font-size:.78rem;color:var(--gray);margin-bottom:4px;display:block">URL da Evolution API</label>
-              <input id="evo-url" type="url" placeholder="http://localhost:8080"
+              <label style="font-size:.78rem;color:var(--gray);margin-bottom:4px;display:block">URL da API</label>
+              <input id="evo-url" type="url" placeholder="https://evogo.exemplo.com"
                 style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.9rem;outline:none"/>
             </div>
             <div>
-              <label style="font-size:.78rem;color:var(--gray);margin-bottom:4px;display:block">API Key (Global)</label>
+              <label style="font-size:.78rem;color:var(--gray);margin-bottom:4px;display:block">
+                <span id="evo-key-label">Global API Key</span>
+              </label>
               <div style="position:relative">
                 <input id="evo-key" type="password" placeholder="sua-api-key"
                   style="width:100%;padding:9px 36px 9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.9rem;outline:none;font-family:monospace"/>
@@ -745,23 +760,35 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
                 style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.9rem;outline:none"/>
             </div>
             <div>
-              <label style="font-size:.78rem;color:var(--gray);margin-bottom:4px;display:block">Versão</label>
-              <select id="evo-version" style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.9rem;outline:none;background:var(--white)">
-                <option value="evolution-api">Evolution API (v1/v2)</option>
-                <option value="evolution-go">Evolution GO</option>
-              </select>
+              <label style="font-size:.78rem;color:var(--gray);margin-bottom:4px;display:block">Status atual</label>
+              <div id="evo-status-box" style="padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem;display:flex;align-items:center;gap:8px">
+                <div id="evo-status-dot" style="width:8px;height:8px;border-radius:50%;background:#9ca3af;flex-shrink:0"></div>
+                <span id="evo-status-text">—</span>
+              </div>
             </div>
           </div>
 
-          <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
-            <button onclick="saveEvoSettings()" class="btn-primary" style="padding:10px 24px;font-size:.9rem">
-              <i class="fa fa-save"></i> Salvar Evolution
+          <!-- Instâncias disponíveis -->
+          <div id="evo-instances-box" style="display:none;margin-bottom:14px">
+            <label style="font-size:.78rem;color:var(--gray);margin-bottom:6px;display:block">Instâncias na API</label>
+            <div id="evo-instances-list" style="display:flex;flex-wrap:wrap;gap:6px"></div>
+          </div>
+
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <button onclick="saveEvoSettings()" class="btn-primary" style="padding:9px 20px;font-size:.88rem">
+              <i class="fa fa-save"></i> Salvar
             </button>
-            <button onclick="testEvoConnection()" style="padding:10px 18px;border:1.5px solid var(--green);background:none;color:var(--green);border-radius:8px;font-size:.85rem;font-weight:600;cursor:pointer">
-              <i class="fa fa-wifi"></i> Testar Conexão
+            <button onclick="testEvoConnection()" style="padding:9px 16px;border:1.5px solid var(--green);background:none;color:var(--green);border-radius:8px;font-size:.84rem;font-weight:600;cursor:pointer">
+              <i class="fa fa-wifi"></i> Testar
             </button>
-            <button onclick="createEvoInstance()" style="padding:10px 18px;border:1.5px solid var(--blue);background:none;color:var(--blue);border-radius:8px;font-size:.85rem;font-weight:600;cursor:pointer">
+            <button onclick="listEvoInstances()" style="padding:9px 16px;border:1.5px solid var(--blue);background:none;color:var(--blue);border-radius:8px;font-size:.84rem;font-weight:600;cursor:pointer">
+              <i class="fa fa-list"></i> Ver Instâncias
+            </button>
+            <button onclick="createEvoInstance()" style="padding:9px 16px;border:1.5px solid var(--purple);background:none;color:var(--purple);border-radius:8px;font-size:.84rem;font-weight:600;cursor:pointer">
               <i class="fa fa-plus-circle"></i> Criar Instância
+            </button>
+            <button onclick="reconnectWhatsApp()" style="padding:9px 16px;border:1.5px solid var(--orange);background:none;color:var(--orange);border-radius:8px;font-size:.84rem;font-weight:600;cursor:pointer">
+              <i class="fa fa-plug"></i> Reconectar
             </button>
             <span id="evo-save-status" style="font-size:.82rem;display:none"></span>
           </div>
@@ -1433,13 +1460,36 @@ async function saveGeneralSettings() {
   }
 }
 
+function setEvoVersion(ver) {
+  $('evo-version').value = ver;
+  const isGo = ver === 'evolution-go';
+  // Destaca botão ativo
+  const btnGo  = $('evo-ver-go');
+  const btnApi = $('evo-ver-api');
+  if (btnGo)  { btnGo.style.borderColor  = isGo  ? 'var(--green)' : 'var(--border)'; btnGo.style.color  = isGo  ? 'var(--green)' : 'var(--text)'; btnGo.style.background  = isGo  ? 'rgba(0,168,132,.08)' : ''; }
+  if (btnApi) { btnApi.style.borderColor = !isGo ? 'var(--green)' : 'var(--border)'; btnApi.style.color = !isGo ? 'var(--green)' : 'var(--text)'; btnApi.style.background = !isGo ? 'rgba(0,168,132,.08)' : ''; }
+  // Atualiza label da key
+  const lbl = $('evo-key-label');
+  if (lbl) lbl.textContent = isGo ? 'Global API Key' : 'API Key';
+  if ($('evo-url')) $('evo-url').placeholder = isGo ? 'https://evogo.exemplo.com' : 'https://api.evolution.com';
+}
+
 async function loadEvoSettings() {
   const data = await api('GET', '/api/settings/evolution');
   if (!data) return;
   $('evo-url').value      = data.url      || '';
   $('evo-key').value      = data.key      || '';
   $('evo-instance').value = data.instance || '';
-  $('evo-version').value  = data.version  || 'evolution-api';
+  setEvoVersion(data.version || 'evolution-go');
+  // Mostra status atual
+  _updateEvoStatusBox('…', '#9ca3af');
+}
+
+function _updateEvoStatusBox(text, color) {
+  const dot  = $('evo-status-dot');
+  const txt  = $('evo-status-text');
+  if (dot) dot.style.background = color;
+  if (txt) txt.textContent = text;
 }
 
 async function saveEvoSettings() {
@@ -1449,45 +1499,70 @@ async function saveEvoSettings() {
     instance: $('evo-instance').value.trim(),
     version:  $('evo-version').value,
   };
+  if (!payload.url || !payload.key || !payload.instance) {
+    toast('⚠️ Preencha URL, API Key e Nome da Instância.'); return;
+  }
   const res = await api('POST', '/api/settings/evolution', payload);
-  const st = $('evo-save-status');
+  const st  = $('evo-save-status');
   if (res && res.ok) {
     st.style.display = 'inline-flex'; st.style.color = 'var(--green)';
     st.innerHTML = '<i class="fa fa-check-circle"></i>&nbsp;Salvo!';
-    toast('✅ Configurações Evolution salvas! Reinicie o servidor para aplicar.');
+    toast('✅ Configurações Evolution salvas e aplicadas!');
+    // Auto-testa após salvar
+    setTimeout(testEvoConnection, 800);
   } else {
     st.style.display = 'inline-flex'; st.style.color = 'var(--red)';
     st.innerHTML = '<i class="fa fa-times-circle"></i>&nbsp;Erro ao salvar';
   }
-  setTimeout(() => st.style.display = 'none', 4000);
+  setTimeout(() => st.style.display = 'none', 5000);
 }
 
 async function testEvoConnection() {
-  const st = $('evo-save-status');
-  st.style.display = 'inline-flex'; st.style.color = 'var(--gray)';
-  st.innerHTML = '<i class="fa fa-spinner fa-spin"></i>&nbsp;Testando...';
+  _updateEvoStatusBox('Testando…', '#f97316');
   const res = await api('GET', '/api/settings/evolution/test');
-  if (res && res.connected) {
-    st.style.color = 'var(--green)';
-    st.innerHTML = `<i class="fa fa-check-circle"></i>&nbsp;Conectado! (${res.state})`;
-    toast('✅ Evolution API conectada: ' + res.state);
-  } else {
-    st.style.color = 'var(--red)';
-    st.innerHTML = `<i class="fa fa-times-circle"></i>&nbsp;${res?.error || 'Sem conexão'}`;
-    toast('❌ Falha: ' + (res?.error || 'Evolution API não responde'));
+  if (!res) return;
+  const ok    = res.ok && res.state !== 'unknown';
+  const color = res.connected ? '#00a884' : (ok ? '#f97316' : '#ef4444');
+  const label = res.connected ? `✓ Conectado (${res.version})` :
+                ok ? `⚡ ${res.state} (${res.version})` :
+                `✗ ${res.error || 'Sem conexão'}`;
+  _updateEvoStatusBox(label, color);
+  toast(res.connected ? `✅ WhatsApp conectado!` : `⚠️ ${label}`);
+}
+
+async function listEvoInstances() {
+  const box  = $('evo-instances-box');
+  const list = $('evo-instances-list');
+  if (!box || !list) return;
+  list.innerHTML = '<span style="font-size:.8rem;color:var(--gray)">Carregando…</span>';
+  box.style.display = 'block';
+  const res = await api('GET', '/api/settings/evolution/instances');
+  if (!res || !res.length) {
+    list.innerHTML = '<span style="font-size:.8rem;color:var(--gray)">Nenhuma instância encontrada.</span>';
+    return;
   }
-  setTimeout(() => st.style.display = 'none', 6000);
+  list.innerHTML = res.map(i => {
+    const name  = i.name  || i.instanceName || '?';
+    const state = i.state || i.connectionStatus || '?';
+    const color = state === 'open' ? '#00a884' : '#f97316';
+    return `<span style="padding:4px 10px;border-radius:99px;border:1.5px solid ${color};color:${color};font-size:.78rem;cursor:pointer;font-weight:600"
+      onclick="$('evo-instance').value='${name}'" title="Clique para selecionar">
+      ${name} · ${state}
+    </span>`;
+  }).join('');
 }
 
 async function createEvoInstance() {
   const name = $('evo-instance').value.trim();
   if (!name) { toast('⚠️ Informe o nome da instância antes de criar.'); return; }
-  if (!confirm(`Criar instância "${name}" na Evolution API?`)) return;
+  if (!confirm(`Criar instância "${name}"?`)) return;
   const res = await api('POST', '/api/settings/evolution/create-instance');
   if (res && res.ok) {
-    toast(`✅ Instância "${name}" criada! Vá em Configurações → QR Code para conectar.`);
+    const msg = res.exists ? `Instância "${name}" já existe.` : `✅ Instância "${name}" criada!`;
+    toast(msg);
+    setTimeout(testEvoConnection, 600);
   } else {
-    toast('❌ Erro ao criar instância: ' + (res?.error || 'verifique URL e API Key'));
+    toast('❌ ' + (res?.error || 'Erro ao criar instância — verifique URL e API Key'));
   }
 }
 
